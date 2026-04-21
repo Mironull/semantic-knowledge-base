@@ -10,6 +10,16 @@ function App() {
 
   // --- НОВЫЕ СОСТОЯНИЯ ---
   const [searchHistory, setSearchHistory] = useState([]); // История поисков
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [error, setError] = useState('');
+  const [allDocuments, setAllDocuments] = useState([]);
+  const [isDocumentsOpen, setIsDocumentsOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewContent, setPreviewContent] = useState('');
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  const API_BASE_URL = 'http://127.0.0.1:8000';
 
   const startVoiceRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -50,13 +60,14 @@ function App() {
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
   };
 
-  // Измененная функция поиска с поддержкой истории
-  const handleSearch = (queryOverride) => {
+  // Поиск документов через backend API
+  const handleSearch = async (queryOverride) => {
     const finalQuery = typeof queryOverride === 'string' ? queryOverride : searchQuery;
     if (!finalQuery.trim()) return;
 
     setIsLoading(true);
     setHasSearched(false);
+    setError('');
 
     // Добавляем в историю (только уникальные значения, максимум 5)
     setSearchHistory(prev => {
@@ -64,14 +75,62 @@ function App() {
       return [finalQuery, ...filtered].slice(0, 5);
     });
 
-    setTimeout(() => {
-      setResults([
-        { id: 1, title: "Инструкция по отпускам", text: "Заявление подается за 14 дней до планируемой даты начала отдыха. Согласование проходит через портал HR в течение 3 рабочих дней." },
-        { id: 2, title: "Техника безопасности", text: "Соблюдайте правила при работе с электроприборами. В случае задымления немедленно воспользуйтесь кнопкой оповещения." }
-      ]);
-      setIsLoading(false);
+    try {
+      const response = await fetch(`${API_BASE_URL}/search?name=${encodeURIComponent(finalQuery)}`);
+      if (!response.ok) {
+        throw new Error('Ошибка поиска');
+      }
+      const data = await response.json();
+
+      // Преобразуем данные backend в формат для отображения
+      const formattedResults = data.map(doc => ({
+        id: doc.id,
+        title: doc.filename,
+        text: `Тип: ${doc.content_type} | Загружено: ${new Date(doc.upload_date).toLocaleString('ru-RU')}`,
+        downloadUrl: `${API_BASE_URL}/download/${doc.id}`
+      }));
+
+      setResults(formattedResults);
       setHasSearched(true);
-    }, 2000);
+    } catch (err) {
+      setError('Не удалось выполнить поиск. Убедитесь, что backend запущен.');
+      setResults([]);
+      setHasSearched(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Загрузка документа
+  const handleFileUpload = async () => {
+    if (!uploadFile) return;
+
+    setUploadStatus('Загрузка...');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Ошибка загрузки');
+      }
+
+      const data = await response.json();
+      setUploadStatus(`Успешно загружено: ${data.filename}`);
+      setUploadFile(null);
+
+      // Очищаем статус через 3 секунды
+      setTimeout(() => setUploadStatus(''), 3000);
+    } catch (err) {
+      setError('Не удалось загрузить файл. Проверьте подключение к backend.');
+      setUploadStatus('');
+    }
   };
 
   return (
@@ -138,6 +197,17 @@ function App() {
             Интеллектуальный поиск по базе знаний компании.
           </p>
         </header>
+
+        {/* ОШИБКА */}
+        {error && (
+          <div style={{
+            ...baseStyle, backgroundColor: '#fee2e2', border: '1px solid #ef4444',
+            color: '#dc2626', padding: '12px 20px', borderRadius: '12px', marginBottom: '16px',
+            animation: 'fadeIn 0.3s'
+          }}>
+            {error}
+          </div>
+        )}
 
         {/* ПАНЕЛЬ ПОИСКА */}
         <div style={{
@@ -221,8 +291,29 @@ function App() {
           {isAdminOpen && (
             <div style={{ padding: '24px', borderTop: `1px solid ${theme.cardBorder}`, marginTop: '8px' }}>
               <div style={{ border: isDarkMode ? '2px dashed #475569' : '2px dashed #cbd5e1', borderRadius: '20px', padding: '30px', textAlign: 'center', backgroundColor: isDarkMode ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.4)' }}>
-                <p style={{ color: theme.textSub, fontSize: '14px', marginBottom: '16px' }}>Загрузите PDF или Word документ</p>
-                <input type="file" style={{ fontSize: '14px', color: theme.textSub }} />
+                <p style={{ color: theme.textSub, fontSize: '14px', marginBottom: '16px' }}>Загрузите PDF, Word или текстовый документ</p>
+                <input
+                  type="file"
+                  onChange={(e) => setUploadFile(e.target.files[0])}
+                  style={{ fontSize: '14px', color: theme.textSub, marginBottom: '16px' }}
+                />
+                {uploadFile && (
+                  <button
+                    onClick={handleFileUpload}
+                    style={{
+                      ...baseStyle, backgroundColor: theme.btnBg, color: 'white',
+                      padding: '10px 24px', borderRadius: '12px', border: 'none',
+                      fontWeight: '600', cursor: 'pointer', marginTop: '8px'
+                    }}
+                  >
+                    Загрузить
+                  </button>
+                )}
+                {uploadStatus && (
+                  <p style={{ color: theme.textPink, fontSize: '14px', marginTop: '12px', fontWeight: '500' }}>
+                    {uploadStatus}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -232,13 +323,38 @@ function App() {
         <div style={{ width: '100%' }}>
           {hasSearched && !isLoading && (
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-              <h2 style={{ fontSize: '12px', fontWeight: '800', color: theme.textResultsTag, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', marginLeft: '4px' }}>Найденные соответствия</h2>
-              {results.map((item) => (
-                <div key={item.id} style={{ ...baseStyle, backgroundColor: theme.card, padding: '24px', borderRadius: '24px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: isDarkMode ? 'none' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-                  <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '8px' }}>{item.title}</h3>
-                  <p style={{ color: theme.textSub, lineHeight: '1.6', fontSize: '15px' }}>{item.text}</p>
+              <h2 style={{ fontSize: '12px', fontWeight: '800', color: theme.textResultsTag, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', marginLeft: '4px' }}>
+                Найденные соответствия ({results.length})
+              </h2>
+              {results.length === 0 ? (
+                <div style={{ ...baseStyle, backgroundColor: theme.card, padding: '40px', borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+                  <p style={{ color: theme.textSub, fontSize: '16px' }}>Документы не найдены</p>
                 </div>
-              ))}
+              ) : (
+                results.map((item) => (
+                  <div key={item.id} style={{ ...baseStyle, backgroundColor: theme.card, padding: '24px', borderRadius: '24px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: isDarkMode ? 'none' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '8px' }}>{item.title}</h3>
+                    <p style={{ color: theme.textSub, lineHeight: '1.6', fontSize: '15px', marginBottom: '12px' }}>{item.text}</p>
+                    <a
+                      href={item.downloadUrl}
+                      download
+                      style={{
+                        ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        backgroundColor: theme.tagBg, color: theme.tagText, padding: '8px 16px',
+                        borderRadius: '12px', border: `1px solid ${theme.tagBorder}`,
+                        textDecoration: 'none', fontSize: '14px', fontWeight: '600'
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Скачать
+                    </a>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
