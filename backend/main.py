@@ -5,6 +5,7 @@ from typing import List
 from uuid import uuid4
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -35,6 +36,15 @@ def init_db():
 init_db()
 
 app = FastAPI(title="Document Store API (SQLite)", version="1.0.0")
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class DocumentMetadata(BaseModel):
     id: str
