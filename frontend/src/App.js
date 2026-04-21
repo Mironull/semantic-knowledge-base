@@ -125,12 +125,71 @@ function App() {
       setUploadStatus(`Успешно загружено: ${data.filename}`);
       setUploadFile(null);
 
+      // Обновляем список документов
+      loadAllDocuments();
+
       // Очищаем статус через 3 секунды
       setTimeout(() => setUploadStatus(''), 3000);
     } catch (err) {
       setError('Не удалось загрузить файл. Проверьте подключение к backend.');
       setUploadStatus('');
     }
+  };
+
+  // Загрузка всех документов
+  const loadAllDocuments = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents`);
+      if (!response.ok) throw new Error('Ошибка загрузки');
+      const data = await response.json();
+      setAllDocuments(data);
+    } catch (err) {
+      setError('Не удалось загрузить список документов');
+    }
+  };
+
+  // Предпросмотр документа
+  const handlePreview = async (docId, docName) => {
+    setPreviewDoc({ id: docId, name: docName });
+    setIsPreviewLoading(true);
+    setPreviewContent('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/preview/${docId}`);
+      if (!response.ok) throw new Error('Ошибка предпросмотра');
+      const data = await response.json();
+
+      if (data.type === 'text') {
+        setPreviewContent(data.content);
+      } else {
+        setPreviewContent(data.content || 'Предпросмотр недоступен для данного типа файла');
+      }
+    } catch (err) {
+      setPreviewContent('Не удалось загрузить предпросмотр');
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  // Закрыть предпросмотр
+  const closePreview = () => {
+    setPreviewDoc(null);
+    setPreviewContent('');
+  };
+
+  // Загружаем все документы при открытии панели
+  const toggleDocuments = () => {
+    if (!isDocumentsOpen) {
+      loadAllDocuments();
+    }
+    setIsDocumentsOpen(!isDocumentsOpen);
+  };
+
+  // Форматирование размера файла
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   return (
@@ -277,6 +336,53 @@ function App() {
           </div>
         )}
 
+        {/* ВСЕ ДОКУМЕНТЫ */}
+        <div style={{ ...baseStyle, backgroundColor: theme.card, borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow, marginBottom: '16px', overflow: 'hidden', padding: '8px' }}>
+          <button onClick={toggleDocuments} style={{ ...baseStyle, width: '100%', padding: '12px 0', border: 'none', background: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontWeight: '500', color: theme.textMain }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ paddingLeft: '18px', display: 'flex', alignItems: 'center', opacity: 0.5 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              </div>
+              <span style={{ fontSize: '16px', opacity: 0.7 }}>Все документы {allDocuments.length > 0 && `(${allDocuments.length})`}</span>
+            </div>
+            <div style={{ paddingRight: '18px', opacity: 0.3, transform: isDocumentsOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.3s' }}>▼</div>
+          </button>
+          {isDocumentsOpen && (
+            <div style={{ padding: '16px', borderTop: `1px solid ${theme.cardBorder}`, marginTop: '8px', maxHeight: '400px', overflowY: 'auto' }}>
+              {allDocuments.length === 0 ? (
+                <p style={{ color: theme.textSub, textAlign: 'center', padding: '20px' }}>Документы отсутствуют</p>
+              ) : (
+                allDocuments.map((doc) => (
+                  <div key={doc.id} style={{ ...baseStyle, padding: '12px', marginBottom: '8px', backgroundColor: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)', borderRadius: '12px', border: `1px solid ${theme.cardBorder}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <h4 style={{ fontSize: '15px', fontWeight: '600', color: theme.textMain, margin: 0 }}>{doc.filename}</h4>
+                      <span style={{ fontSize: '12px', color: theme.textSub }}>{formatSize(doc.size)}</span>
+                    </div>
+                    <p style={{ fontSize: '13px', color: theme.textSub, margin: '4px 0' }}>
+                      {doc.content_type} • {new Date(doc.upload_date).toLocaleDateString('ru-RU')}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <button
+                        onClick={() => handlePreview(doc.id, doc.filename)}
+                        style={{ ...baseStyle, fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, cursor: 'pointer', fontWeight: '600' }}
+                      >
+                        👁 Просмотр
+                      </button>
+                      <a
+                        href={`${API_BASE_URL}/download/${doc.id}`}
+                        download
+                        style={{ ...baseStyle, fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, textDecoration: 'none', fontWeight: '600' }}
+                      >
+                        ⬇ Скачать
+                      </a>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
         {/* УПРАВЛЕНИЕ БАЗОЙ */}
         <div style={{ ...baseStyle, backgroundColor: theme.card, borderRadius: '24px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow, marginBottom: '40px', overflow: 'hidden', padding: '8px' }}>
           <button onClick={() => setIsAdminOpen(!isAdminOpen)} style={{ ...baseStyle, width: '100%', padding: '12px 0', border: 'none', background: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontWeight: '500', color: theme.textMain }}>
@@ -335,23 +441,40 @@ function App() {
                   <div key={item.id} style={{ ...baseStyle, backgroundColor: theme.card, padding: '24px', borderRadius: '24px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: isDarkMode ? 'none' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
                     <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '8px' }}>{item.title}</h3>
                     <p style={{ color: theme.textSub, lineHeight: '1.6', fontSize: '15px', marginBottom: '12px' }}>{item.text}</p>
-                    <a
-                      href={item.downloadUrl}
-                      download
-                      style={{
-                        ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '8px',
-                        backgroundColor: theme.tagBg, color: theme.tagText, padding: '8px 16px',
-                        borderRadius: '12px', border: `1px solid ${theme.tagBorder}`,
-                        textDecoration: 'none', fontSize: '14px', fontWeight: '600'
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                      Скачать
-                    </a>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => handlePreview(item.id, item.title)}
+                        style={{
+                          ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '8px',
+                          backgroundColor: theme.tagBg, color: theme.tagText, padding: '8px 16px',
+                          borderRadius: '12px', border: `1px solid ${theme.tagBorder}`,
+                          cursor: 'pointer', fontSize: '14px', fontWeight: '600'
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                          <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                        Просмотр
+                      </button>
+                      <a
+                        href={item.downloadUrl}
+                        download
+                        style={{
+                          ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '8px',
+                          backgroundColor: theme.tagBg, color: theme.tagText, padding: '8px 16px',
+                          borderRadius: '12px', border: `1px solid ${theme.tagBorder}`,
+                          textDecoration: 'none', fontSize: '14px', fontWeight: '600'
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Скачать
+                      </a>
+                    </div>
                   </div>
                 ))
               )}
@@ -359,6 +482,76 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* МОДАЛЬНОЕ ОКНО ПРЕДПРОСМОТРА */}
+      {previewDoc && (
+        <div
+          onClick={closePreview}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)', display: 'flex',
+            justifyContent: 'center', alignItems: 'center', zIndex: 1000,
+            padding: '20px', animation: 'fadeIn 0.2s'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              ...baseStyle, backgroundColor: theme.card, borderRadius: '24px',
+              maxWidth: '900px', width: '100%', maxHeight: '80vh',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              border: `1px solid ${theme.cardBorder}`, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            {/* Заголовок модального окна */}
+            <div style={{ padding: '20px', borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: theme.textMain, margin: 0 }}>{previewDoc.name}</h3>
+              <button
+                onClick={closePreview}
+                style={{
+                  ...baseStyle, background: 'none', border: 'none', fontSize: '24px',
+                  cursor: 'pointer', color: theme.textSub, padding: '0 8px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Контент предпросмотра */}
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              {isPreviewLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <div style={{ animation: 'skeletonPulse 1.5s infinite ease-in-out' }}>
+                    <p style={{ color: theme.textSub }}>Загрузка...</p>
+                  </div>
+                </div>
+              ) : (
+                <pre style={{
+                  whiteSpace: 'pre-wrap', wordWrap: 'break-word',
+                  fontFamily: '"Courier New", monospace', fontSize: '14px',
+                  color: theme.textMain, margin: 0, lineHeight: '1.6'
+                }}>
+                  {previewContent}
+                </pre>
+              )}
+            </div>
+
+            {/* Кнопка закрытия снизу */}
+            <div style={{ padding: '16px', borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'center' }}>
+              <button
+                onClick={closePreview}
+                style={{
+                  ...baseStyle, backgroundColor: theme.btnBg, color: 'white',
+                  padding: '10px 24px', borderRadius: '12px', border: 'none',
+                  fontWeight: '600', cursor: 'pointer'
+                }}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

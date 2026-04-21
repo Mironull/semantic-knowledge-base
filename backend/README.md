@@ -1,4 +1,6 @@
-API for storing docs of different extentions (.pdf, .txt, .docx & etc.)
+FastAPI backend for document storage with search and preview capabilities.
+
+Supports multiple file formats: .pdf, .txt, .docx, .json, etc.
 
 ### Working with Virtual Environment
 

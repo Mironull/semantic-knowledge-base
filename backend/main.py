@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import io
 from datetime import datetime
 from typing import List
 from uuid import uuid4
@@ -8,6 +9,19 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+# Import libraries for document parsing
+try:
+    from PyPDF2 import PdfReader
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 # --- SQLite setup ---
 DB_FILE = "docstore.db"
@@ -51,6 +65,13 @@ class DocumentMetadata(BaseModel):
     filename: str
     content_type: str
     upload_date: datetime
+
+class DocumentMetadataWithSize(BaseModel):
+    id: str
+    filename: str
+    content_type: str
+    upload_date: datetime
+    size: int  # size in bytes
 
 @app.post("/upload", response_model=DocumentMetadata)
 async def upload_document(file: UploadFile = File(...)):
@@ -106,6 +127,139 @@ async def search_documents(name: str = Query(..., min_length=1)):
         )
         for row in rows
     ]
+
+@app.get("/documents", response_model=List[DocumentMetadataWithSize])
+async def list_all_documents():
+    """
+    List all documents in the database with metadata including file size.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, content_type, upload_date, length(data) as size FROM documents ORDER BY upload_date DESC"
+        ).fetchall()
+
+    return [
+        DocumentMetadataWithSize(
+            id=row["id"],
+            filename=row["filename"],
+            content_type=row["content_type"],
+            upload_date=datetime.fromisoformat(row["upload_date"]) if isinstance(row["upload_date"], str) else row["upload_date"],
+            size=row["size"]
+        )
+        for row in rows
+    ]
+
+@app.get("/preview/{doc_id}")
+async def preview_document(doc_id: str):
+    """
+    Preview document content. Returns text content for supported formats including PDF and DOCX.
+    """
+    with get_db() as conn:
+        row = conn.execute("SELECT filename, content_type, data FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+    filename = row["filename"]
+    content_type = row["content_type"] or ""
+    data = row["data"]
+
+    # Try to decode as text for text-based formats
+    if content_type and (
+        "text" in content_type.lower() or
+        "json" in content_type.lower() or
+        "xml" in content_type.lower() or
+        "javascript" in content_type.lower() or
+        content_type in ["application/json", "application/xml"]
+    ):
+        try:
+            text_content = data.decode('utf-8')
+            return {"content": text_content, "type": "text", "content_type": content_type}
+        except UnicodeDecodeError:
+            pass
+
+    # Handle PDF files
+    if PDF_AVAILABLE and (
+        "pdf" in content_type.lower() or
+        filename.lower().endswith('.pdf')
+    ):
+        try:
+            pdf_file = io.BytesIO(data)
+            pdf_reader = PdfReader(pdf_file)
+            text_content = []
+
+            for page_num, page in enumerate(pdf_reader.pages, 1):
+                page_text = page.extract_text()
+                if page_text.strip():
+                    text_content.append(f"=== Страница {page_num} ===\n{page_text}\n")
+
+            if text_content:
+                return {
+                    "content": "\n".join(text_content),
+                    "type": "text",
+                    "content_type": content_type,
+                    "pages": len(pdf_reader.pages)
+                }
+            else:
+                return {
+                    "content": "PDF файл не содержит текста или текст не может быть извлечен",
+                    "type": "unsupported",
+                    "content_type": content_type
+                }
+        except Exception as e:
+            return {
+                "content": f"Ошибка при чтении PDF: {str(e)}",
+                "type": "error",
+                "content_type": content_type
+            }
+
+    # Handle DOCX files
+    if DOCX_AVAILABLE and (
+        "wordprocessingml" in content_type.lower() or
+        "msword" in content_type.lower() or
+        filename.lower().endswith('.docx')
+    ):
+        try:
+            docx_file = io.BytesIO(data)
+            doc = Document(docx_file)
+            text_content = []
+
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    text_content.append(paragraph.text)
+
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        text_content.append(row_text)
+
+            if text_content:
+                return {
+                    "content": "\n\n".join(text_content),
+                    "type": "text",
+                    "content_type": content_type
+                }
+            else:
+                return {
+                    "content": "DOCX файл не содержит текста",
+                    "type": "unsupported",
+                    "content_type": content_type
+                }
+        except Exception as e:
+            return {
+                "content": f"Ошибка при чтении DOCX: {str(e)}",
+                "type": "error",
+                "content_type": content_type
+            }
+
+    # For other binary formats, return metadata only
+    return {
+        "content": f"Предпросмотр недоступен для формата {content_type or 'неизвестный формат'}",
+        "type": "unsupported",
+        "content_type": content_type,
+        "size": len(data)
+    }
 
 @app.get("/")
 async def root():
