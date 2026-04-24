@@ -15,3 +15,8 @@ typing_extensions==4.15.0
 uvicorn==0.44.0
 PyPDF2==3.0.1
 python-docx==1.1.0
+
+# ML dependencies - CPU only
+torch==2.2.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+sentence-transformers==3.1.1
+numpy==1.26.4

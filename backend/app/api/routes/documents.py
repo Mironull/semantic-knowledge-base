@@ -8,8 +8,9 @@ from uuid import uuid4
 from fastapi import APIRouter, File, UploadFile, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.models import DocumentMetadata, DocumentMetadataWithSize
+from app.models import DocumentMetadata, DocumentMetadataWithSize, DocumentSearchResult
 from app.services import DatabaseManager, DocumentParserService
+from app.ml import EmbeddingService, EmbeddingDatabase
 
 
 # Create router
@@ -18,6 +19,8 @@ router = APIRouter()
 # Initialize services (singleton pattern)
 db_manager = DatabaseManager()
 parser_service = DocumentParserService()
+embedding_service = EmbeddingService()
+embedding_db = EmbeddingDatabase()
 
 
 @router.post(
@@ -50,6 +53,11 @@ async def upload_document(
     The document will be stored with a unique UUID identifier and can be
     retrieved, searched, or previewed later using the document ID.
 
+    **Machine Learning Integration:**
+    - Automatically generates embeddings for semantic search
+    - Supports multilingual content (including Russian)
+    - Embeddings stored in separate database
+
     **Supported formats:**
     - PDF (application/pdf)
     - Word documents (application/vnd.openxmlformats-officedocument.wordprocessingml.document)
@@ -61,13 +69,39 @@ async def upload_document(
     doc_id = str(uuid4())
     now = datetime.utcnow()
 
-    return db_manager.insert_document(
+    # Store document in main database
+    metadata = db_manager.insert_document(
         doc_id=doc_id,
         filename=file.filename,
         content_type=file.content_type,
         data=content,
         upload_date=now
     )
+
+    # Generate and store embedding if ML service is available
+    if embedding_service.is_available():
+        try:
+            # Extract text content from document
+            parsed_data = parser_service.parse_document(
+                data=content,
+                filename=file.filename,
+                content_type=file.content_type
+            )
+
+            # Get text content (handle different response types)
+            text_content = parsed_data.get("content", "")
+
+            # Generate embedding if we have text content
+            if text_content and isinstance(text_content, str):
+                embedding = embedding_service.generate_embedding(text_content)
+                if embedding is not None:
+                    embedding_db.store_embedding(doc_id, embedding)
+                    print(f"Generated and stored embedding for document {doc_id}")
+        except Exception as e:
+            # Log error but don't fail the upload
+            print(f"Warning: Failed to generate embedding for {file.filename}: {e}")
+
+    return metadata
 
 
 @router.get(
@@ -118,12 +152,12 @@ async def download_document(
 
 @router.get(
     "/search",
-    response_model=List[DocumentMetadata],
+    response_model=List[DocumentSearchResult],
     summary="Search Documents",
-    description="Search for documents by filename using case-insensitive partial matching.",
+    description="Search for documents using semantic search with similarity scores.",
     responses={
         200: {
-            "description": "List of matching documents",
+            "description": "List of matching documents with similarity scores",
             "content": {
                 "application/json": {
                     "example": [
@@ -131,7 +165,8 @@ async def download_document(
                             "id": "123e4567-e89b-12d3-a456-426614174000",
                             "filename": "report.pdf",
                             "content_type": "application/pdf",
-                            "upload_date": "2025-04-21T12:00:00"
+                            "upload_date": "2025-04-21T12:00:00",
+                            "similarity_score": 0.8542
                         }
                     ]
                 }
@@ -143,18 +178,82 @@ async def search_documents(
     name: str = Query(
         ...,
         min_length=1,
-        description="Search query (partial filename match)",
-        example="report"
+        description="Search query for semantic or filename search",
+        example="machine learning algorithms"
     )
 ):
     """
-    Search for documents by filename.
+    Search for documents using semantic search and filename matching.
 
-    Performs a case-insensitive partial match on document filenames.
-    For example, searching for "report" will find "annual_report.pdf",
-    "quarterly_report.docx", etc.
+    **Search Methods:**
+    1. **Semantic Search** (Primary): Uses machine learning to find documents
+       based on meaning and context, not just keywords. Works with multilingual
+       content including Russian.
+    2. **Filename Search** (Fallback): If ML is not available, performs
+       case-insensitive partial match on document filenames.
+
+    **Examples:**
+    - "машинное обучение" - finds documents about machine learning in Russian
+    - "neural networks" - finds related documents even without exact phrase match
+    - "report" - finds all documents with "report" in filename
+
+    Returns documents sorted by relevance (similarity score for semantic search).
     """
-    return db_manager.search_documents(name)
+    # Try semantic search if ML service is available
+    if embedding_service.is_available() and embedding_db.get_embedding_count() > 0:
+        try:
+            # Generate embedding for query
+            query_embedding = embedding_service.generate_embedding(name)
+
+            if query_embedding is not None:
+                # Get all document embeddings
+                doc_ids, doc_embeddings = embedding_db.get_all_embeddings()
+
+                if len(doc_ids) > 0:
+                    # Find most similar documents
+                    similar_docs = embedding_service.find_most_similar(
+                        query_embedding=query_embedding,
+                        doc_embeddings=doc_embeddings,
+                        doc_ids=doc_ids,
+                        top_k=20  # Return top 20 most similar documents
+                    )
+
+                    # Retrieve metadata for similar documents with similarity scores
+                    results = []
+                    for doc_id, similarity_score in similar_docs:
+                        metadata = db_manager.get_document_metadata(doc_id)
+                        if metadata:
+                            # Convert to search result with similarity score
+                            search_result = DocumentSearchResult(
+                                id=metadata.id,
+                                filename=metadata.filename,
+                                content_type=metadata.content_type,
+                                upload_date=metadata.upload_date,
+                                similarity_score=round(similarity_score, 4)
+                            )
+                            results.append(search_result)
+
+                    print(f"Semantic search returned {len(results)} results")
+                    return results
+        except Exception as e:
+            # Log error and fall back to filename search
+            print(f"Warning: Semantic search failed, falling back to filename search: {e}")
+
+    # Fallback to filename search (no similarity scores)
+    print("Using filename search")
+    filename_results = db_manager.search_documents(name)
+
+    # Convert to search results without similarity scores
+    return [
+        DocumentSearchResult(
+            id=doc.id,
+            filename=doc.filename,
+            content_type=doc.content_type,
+            upload_date=doc.upload_date,
+            similarity_score=None
+        )
+        for doc in filename_results
+    ]
 
 
 @router.get(

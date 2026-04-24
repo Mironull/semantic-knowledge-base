@@ -110,6 +110,31 @@ class DatabaseManager:
                 return (row["filename"], row["content_type"], row["data"])
             return None
 
+    def get_document_metadata(self, doc_id: str) -> Optional[DocumentMetadata]:
+        """
+        Retrieve document metadata by ID (without file data).
+
+        Args:
+            doc_id: Document identifier
+
+        Returns:
+            DocumentMetadata or None if not found
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, filename, content_type, upload_date FROM documents WHERE id = ?",
+                (doc_id,)
+            ).fetchone()
+
+            if row:
+                return DocumentMetadata(
+                    id=row["id"],
+                    filename=row["filename"],
+                    content_type=row["content_type"],
+                    upload_date=self._parse_datetime(row["upload_date"])
+                )
+            return None
+
     def search_documents(self, name: str) -> List[DocumentMetadata]:
         """
         Search documents by filename (case-insensitive partial match).

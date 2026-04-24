@@ -23,6 +23,15 @@ class DocumentMetadataWithSize(BaseModel):
     size: int  # size in bytes
 
 
+class DocumentSearchResult(BaseModel):
+    """Document metadata with similarity score for search results."""
+    id: str
+    filename: str
+    content_type: str
+    upload_date: datetime
+    similarity_score: Optional[float] = None  # Cosine similarity score (0-1)
+
+
 class PreviewResponse(BaseModel):
     """Response model for document preview."""
     content: str

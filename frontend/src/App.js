@@ -19,7 +19,7 @@ function App() {
   const [previewContent, setPreviewContent] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
-  const API_BASE_URL = 'http://127.0.0.1:8000';
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 
   const startVoiceRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -83,12 +83,20 @@ function App() {
       const data = await response.json();
 
       // Преобразуем данные backend в формат для отображения
-      const formattedResults = data.map(doc => ({
-        id: doc.id,
-        title: doc.filename,
-        text: `Тип: ${doc.content_type} | Загружено: ${new Date(doc.upload_date).toLocaleString('ru-RU')}`,
-        downloadUrl: `${API_BASE_URL}/download/${doc.id}`
-      }));
+      const formattedResults = data.map(doc => {
+        const dateStr = new Date(doc.upload_date).toLocaleString('ru-RU');
+        const similarityText = doc.similarity_score !== null && doc.similarity_score !== undefined
+          ? ` | Совпадение: ${(doc.similarity_score * 100).toFixed(1)}%`
+          : '';
+
+        return {
+          id: doc.id,
+          title: doc.filename,
+          text: `Тип: ${doc.content_type} | Загружено: ${dateStr}${similarityText}`,
+          downloadUrl: `${API_BASE_URL}/download/${doc.id}`,
+          similarity: doc.similarity_score
+        };
+      });
 
       setResults(formattedResults);
       setHasSearched(true);
@@ -438,8 +446,30 @@ function App() {
                 </div>
               ) : (
                 results.map((item) => (
-                  <div key={item.id} style={{ ...baseStyle, backgroundColor: theme.card, padding: '24px', borderRadius: '24px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: isDarkMode ? 'none' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-                    <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '8px' }}>{item.title}</h3>
+                  <div key={item.id} style={{ ...baseStyle, backgroundColor: theme.card, padding: '24px', borderRadius: '24px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: isDarkMode ? 'none' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)', position: 'relative' }}>
+                    {/* Similarity Badge */}
+                    {item.similarity !== null && item.similarity !== undefined && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '16px',
+                        right: '16px',
+                        backgroundColor: item.similarity >= 0.7 ? '#10b981' : item.similarity >= 0.5 ? '#f59e0b' : '#6b7280',
+                        color: 'white',
+                        padding: '6px 12px',
+                        borderRadius: '12px',
+                        fontSize: '13px',
+                        fontWeight: '700',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                        {(item.similarity * 100).toFixed(0)}%
+                      </div>
+                    )}
+                    <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '8px', paddingRight: item.similarity ? '100px' : '0' }}>{item.title}</h3>
                     <p style={{ color: theme.textSub, lineHeight: '1.6', fontSize: '15px', marginBottom: '12px' }}>{item.text}</p>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
