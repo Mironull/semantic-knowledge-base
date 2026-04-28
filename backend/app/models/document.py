@@ -24,12 +24,14 @@ class DocumentMetadataWithSize(BaseModel):
 
 
 class DocumentSearchResult(BaseModel):
-    """Document metadata with similarity score for search results."""
+    """Document metadata with similarity score and matched chunk for search results."""
     id: str
     filename: str
     content_type: str
     upload_date: datetime
-    similarity_score: Optional[float] = None  # Cosine similarity score (0-1)
+    similarity_score: Optional[float] = None
+    chunk_text: Optional[str] = None   # Text of the best-matching chunk
+    chunk_index: Optional[int] = None  # Index of the best-matching chunk
 
 
 class PreviewResponse(BaseModel):

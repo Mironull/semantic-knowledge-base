@@ -1,5 +1,5 @@
 """
-Separate database for storing document embeddings.
+Separate database for storing document chunk embeddings.
 """
 import sqlite3
 import numpy as np
@@ -8,21 +8,14 @@ from contextlib import contextmanager
 
 
 class EmbeddingDatabase:
-    """Manages SQLite database for document embeddings."""
+    """Manages SQLite database for document chunk embeddings."""
 
     def __init__(self, db_file: Optional[str] = None):
-        """
-        Initialize embedding database manager.
-
-        Args:
-            db_file: Path to embeddings database file
-        """
         self.db_file = db_file or "embeddings.db"
         self._init_db()
 
     @contextmanager
     def _get_connection(self):
-        """Context manager for database connections."""
         conn = sqlite3.connect(self.db_file)
         conn.row_factory = sqlite3.Row
         try:
@@ -35,121 +28,71 @@ class EmbeddingDatabase:
             conn.close()
 
     def _init_db(self) -> None:
-        """Create the embeddings table if it doesn't exist."""
         with self._get_connection() as conn:
+            # Drop old single-embedding table from previous schema
+            conn.execute("DROP TABLE IF EXISTS embeddings")
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS embeddings (
-                    doc_id TEXT PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    chunk_text TEXT NOT NULL,
                     embedding BLOB NOT NULL,
                     embedding_dim INTEGER NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_id ON embeddings(doc_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)")
 
-    def store_embedding(self, doc_id: str, embedding: np.ndarray) -> None:
+    def store_chunks(self, doc_id: str, chunks: List[str], embeddings: np.ndarray) -> None:
         """
-        Store embedding for a document.
+        Store text chunks and their embeddings for a document.
 
         Args:
             doc_id: Document ID
-            embedding: Embedding vector as numpy array
+            chunks: List of chunk texts
+            embeddings: 2-D numpy array of shape (n_chunks, dim)
         """
         with self._get_connection() as conn:
-            # Convert numpy array to bytes
-            embedding_bytes = embedding.tobytes()
-            embedding_dim = len(embedding)
+            conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
+            for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
+                conn.execute(
+                    "INSERT INTO chunks (doc_id, chunk_index, chunk_text, embedding, embedding_dim) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (doc_id, i, chunk_text, embedding.tobytes(), len(embedding))
+                )
 
-            # Insert or replace
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO embeddings (doc_id, embedding, embedding_dim)
-                VALUES (?, ?, ?)
-                """,
-                (doc_id, embedding_bytes, embedding_dim)
-            )
-
-    def get_embedding(self, doc_id: str) -> Optional[np.ndarray]:
+    def get_all_embeddings(self) -> Tuple[List[str], List[int], List[str], np.ndarray]:
         """
-        Retrieve embedding for a document.
-
-        Args:
-            doc_id: Document ID
+        Retrieve all chunk embeddings.
 
         Returns:
-            Embedding vector as numpy array or None if not found
-        """
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT embedding, embedding_dim FROM embeddings WHERE doc_id = ?",
-                (doc_id,)
-            ).fetchone()
-
-            if not row:
-                return None
-
-            # Convert bytes back to numpy array
-            embedding = np.frombuffer(row["embedding"], dtype=np.float32)
-
-            return embedding
-
-    def get_all_embeddings(self) -> Tuple[List[str], np.ndarray]:
-        """
-        Retrieve all embeddings.
-
-        Returns:
-            Tuple of (doc_ids, embeddings_matrix)
+            Tuple of (doc_ids, chunk_indices, chunk_texts, embeddings_matrix)
         """
         with self._get_connection() as conn:
             rows = conn.execute(
-                "SELECT doc_id, embedding, embedding_dim FROM embeddings"
+                "SELECT doc_id, chunk_index, chunk_text, embedding FROM chunks"
             ).fetchall()
 
             if not rows:
-                return [], np.array([])
+                return [], [], [], np.array([])
 
-            doc_ids = []
-            embeddings = []
-
+            doc_ids, chunk_indices, chunk_texts, embeddings = [], [], [], []
             for row in rows:
                 doc_ids.append(row["doc_id"])
-                embedding = np.frombuffer(row["embedding"], dtype=np.float32)
-                embeddings.append(embedding)
+                chunk_indices.append(row["chunk_index"])
+                chunk_texts.append(row["chunk_text"])
+                embeddings.append(np.frombuffer(row["embedding"], dtype=np.float32))
 
-            embeddings_matrix = np.vstack(embeddings)
-
-            return doc_ids, embeddings_matrix
+            return doc_ids, chunk_indices, chunk_texts, np.vstack(embeddings)
 
     def delete_embedding(self, doc_id: str) -> None:
-        """
-        Delete embedding for a document.
-
-        Args:
-            doc_id: Document ID
-        """
+        """Delete all chunks for a document."""
         with self._get_connection() as conn:
-            conn.execute("DELETE FROM embeddings WHERE doc_id = ?", (doc_id,))
-
-    def embedding_exists(self, doc_id: str) -> bool:
-        """
-        Check if embedding exists for a document.
-
-        Args:
-            doc_id: Document ID
-
-        Returns:
-            True if embedding exists, False otherwise
-        """
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) as count FROM embeddings WHERE doc_id = ?",
-                (doc_id,)
-            ).fetchone()
-
-            return row["count"] > 0
+            conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
 
     def get_embedding_count(self) -> int:
-        """Get total number of stored embeddings."""
+        """Get total number of stored chunks."""
         with self._get_connection() as conn:
-            row = conn.execute("SELECT COUNT(*) as count FROM embeddings").fetchone()
+            row = conn.execute("SELECT COUNT(*) as count FROM chunks").fetchone()
             return row["count"]

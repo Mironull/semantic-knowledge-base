@@ -82,21 +82,15 @@ function App() {
       }
       const data = await response.json();
 
-      // Преобразуем данные backend в формат для отображения
-      const formattedResults = data.map(doc => {
-        const dateStr = new Date(doc.upload_date).toLocaleString('ru-RU');
-        const similarityText = doc.similarity_score !== null && doc.similarity_score !== undefined
-          ? ` | Совпадение: ${(doc.similarity_score * 100).toFixed(1)}%`
-          : '';
-
-        return {
-          id: doc.id,
-          title: doc.filename,
-          text: `Тип: ${doc.content_type} | Загружено: ${dateStr}${similarityText}`,
-          downloadUrl: `${API_BASE_URL}/download/${doc.id}`,
-          similarity: doc.similarity_score
-        };
-      });
+      const formattedResults = data.map(doc => ({
+        id: doc.id,
+        title: doc.filename,
+        meta: `${doc.content_type} • ${new Date(doc.upload_date).toLocaleString('ru-RU')}`,
+        downloadUrl: `${API_BASE_URL}/download/${doc.id}`,
+        similarity: doc.similarity_score,
+        chunkText: doc.chunk_text || null,
+        chunkIndex: doc.chunk_index ?? null,
+      }));
 
       setResults(formattedResults);
       setHasSearched(true);
@@ -491,8 +485,24 @@ function App() {
                         {(item.similarity * 100).toFixed(0)}%
                       </div>
                     )}
-                    <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '8px', paddingRight: item.similarity ? '100px' : '0' }}>{item.title}</h3>
-                    <p style={{ color: theme.textSub, lineHeight: '1.6', fontSize: '15px', marginBottom: '12px' }}>{item.text}</p>
+                    <h3 style={{ fontSize: '20px', fontWeight: '700', color: theme.textMain, marginBottom: '4px', paddingRight: item.similarity ? '100px' : '0' }}>{item.title}</h3>
+                    <p style={{ color: theme.textSub, fontSize: '12px', marginBottom: '10px', marginTop: 0 }}>{item.meta}</p>
+                    {item.chunkText && (
+                      <div style={{
+                        backgroundColor: isDarkMode ? 'rgba(224,142,180,0.06)' : 'rgba(224,142,180,0.06)',
+                        border: `1px solid ${isDarkMode ? 'rgba(224,142,180,0.18)' : 'rgba(224,142,180,0.2)'}`,
+                        borderRadius: '10px', padding: '10px 14px', marginBottom: '12px'
+                      }}>
+                        {item.chunkIndex !== null && (
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: theme.textPink, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
+                            Фрагмент #{item.chunkIndex + 1}
+                          </span>
+                        )}
+                        <p style={{ color: theme.textMain, fontSize: '14px', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {item.chunkText.length > 400 ? item.chunkText.slice(0, 400) + '…' : item.chunkText}
+                        </p>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         onClick={() => handlePreview(item.id, item.title)}

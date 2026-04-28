@@ -1,6 +1,7 @@
 """
 Embedding service for generating and managing document embeddings.
 """
+import re
 import time
 from typing import List, Tuple, Optional
 
@@ -20,7 +21,7 @@ class EmbeddingService:
 
     def __init__(
         self,
-        model_name: str = 'all-MiniLM-L6-v2',
+        model_name: str = 'paraphrase-multilingual-mpnet-base-v2',
         device: str = 'cpu',
         enable_preprocessing: bool = True
     ):
@@ -205,6 +206,56 @@ class EmbeddingService:
         results = [(doc_ids[idx], float(similarities[idx])) for idx in top_indices]
 
         return results
+
+    def split_into_chunks(self, text: str, chunk_size: int = 400) -> List[str]:
+        """
+        Split document text into sentence-aware chunks.
+
+        Splits on sentence boundaries (. ! ? or paragraph breaks) so each chunk
+        stays within ~chunk_size characters. Short fragments are merged into the
+        previous chunk rather than emitted standalone.
+
+        Args:
+            text: Raw document text.
+            chunk_size: Target maximum characters per chunk.
+
+        Returns:
+            List of non-empty chunk strings.
+        """
+        if not text or not text.strip():
+            return []
+
+        text = re.sub(r'[ \t]+', ' ', text.strip())
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        # Split into sentence-level units on punctuation or paragraph breaks
+        units = re.split(r'(?<=[.!?])\s+|\n\n+', text)
+        units = [u.strip() for u in units if u.strip() and len(u.strip()) >= 10]
+
+        if not units:
+            return [text[:chunk_size]] if len(text.strip()) >= 30 else []
+
+        chunks: List[str] = []
+        current_parts: List[str] = []
+        current_len = 0
+
+        for unit in units:
+            if not current_parts or current_len + len(unit) + 1 <= chunk_size:
+                current_parts.append(unit)
+                current_len += len(unit) + 1
+            else:
+                chunk_text = ' '.join(current_parts).strip()
+                if len(chunk_text) >= 30:
+                    chunks.append(chunk_text)
+                current_parts = [unit]
+                current_len = len(unit) + 1
+
+        if current_parts:
+            chunk_text = ' '.join(current_parts).strip()
+            if len(chunk_text) >= 30:
+                chunks.append(chunk_text)
+
+        return chunks if chunks else [text[:chunk_size]]
 
     def get_embedding_dimension(self) -> Optional[int]:
         """Get the dimension of embeddings produced by this model."""
