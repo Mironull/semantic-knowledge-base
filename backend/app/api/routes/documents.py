@@ -290,6 +290,24 @@ async def list_all_documents():
     return db_manager.get_all_documents()
 
 
+@router.delete(
+    "/documents/{doc_id}",
+    summary="Delete Document",
+    description="Delete a document and its embedding by ID.",
+    responses={
+        200: {"description": "Document deleted successfully"},
+        404: {"description": "Document not found"}
+    }
+)
+async def delete_document(doc_id: str):
+    """Delete a document and its associated embedding."""
+    deleted = db_manager.delete_document(doc_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
+    embedding_db.delete_embedding(doc_id)
+    return {"message": "Document deleted successfully"}
+
+
 @router.get(
     "/preview/{doc_id}",
     summary="Preview Document",

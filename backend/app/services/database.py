@@ -185,6 +185,17 @@ class DatabaseManager:
             for row in rows
         ]
 
+    def delete_document(self, doc_id: str) -> bool:
+        """
+        Delete a document by ID.
+
+        Returns:
+            True if deleted, False if not found
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            return cursor.rowcount > 0
+
     @staticmethod
     def _parse_datetime(date_value) -> datetime:
         """

@@ -179,6 +179,19 @@ function App() {
     }
   };
 
+  // Удаление документа
+  const handleDelete = async (docId, docName) => {
+    if (!window.confirm(`Удалить «${docName}»?`)) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents/${docId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Ошибка удаления');
+      setAllDocuments(prev => prev.filter(d => d.id !== docId));
+      setResults(prev => prev.filter(r => r.id !== docId));
+    } catch (err) {
+      setError('Не удалось удалить документ.');
+    }
+  };
+
   // Закрыть предпросмотр
   const closePreview = () => {
     setPreviewDoc(null);
@@ -374,15 +387,21 @@ function App() {
                         onClick={() => handlePreview(doc.id, doc.filename)}
                         style={{ ...baseStyle, fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, cursor: 'pointer', fontWeight: '600' }}
                       >
-                        👁 Просмотр
+                        Просмотр
                       </button>
                       <a
                         href={`${API_BASE_URL}/download/${doc.id}`}
                         download
                         style={{ ...baseStyle, fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, textDecoration: 'none', fontWeight: '600' }}
                       >
-                        ⬇ Скачать
+                        Скачать
                       </a>
+                      <button
+                        onClick={() => handleDelete(doc.id, doc.filename)}
+                        style={{ ...baseStyle, fontSize: '13px', backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontWeight: '600' }}
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </div>
                 ))
