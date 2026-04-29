@@ -220,7 +220,7 @@ async def search_documents(
                             }
 
                     # Sort by score descending, take top 20
-                    ranked = sorted(best_per_doc.items(), key=lambda x: x[1]["score"], reverse=True)[:20]
+                    ranked = sorted(best_per_doc.items(), key=lambda x: x[1]["score"], reverse=True)[:3]
 
                     results = []
                     for doc_id, best in ranked:
