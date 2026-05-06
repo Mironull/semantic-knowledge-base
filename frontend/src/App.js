@@ -18,6 +18,8 @@ function App() {
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewContent, setPreviewContent] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [sortBy, setSortBy] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
 
   const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 
@@ -200,6 +202,19 @@ function App() {
     setIsDocumentsOpen(!isDocumentsOpen);
   };
 
+  const sortedDocuments = [...allDocuments].sort((a, b) => {
+    let cmp = 0;
+    if (sortBy === 'name') cmp = a.filename.localeCompare(b.filename);
+    else if (sortBy === 'size') cmp = a.size - b.size;
+    else cmp = new Date(a.upload_date) - new Date(b.upload_date);
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const handleSort = (field) => {
+    if (sortBy === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortDir('asc'); }
+  };
+
   // Форматирование размера файла
   const formatSize = (bytes) => {
     if (bytes < 1024) return bytes + ' B';
@@ -363,11 +378,33 @@ function App() {
             <div style={{ paddingRight: '18px', opacity: 0.3, transform: isDocumentsOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.3s' }}>▼</div>
           </button>
           {isDocumentsOpen && (
-            <div style={{ padding: '16px', borderTop: `1px solid ${theme.cardBorder}`, marginTop: '8px', maxHeight: '400px', overflowY: 'auto' }}>
+            <div style={{ padding: '16px', borderTop: `1px solid ${theme.cardBorder}`, marginTop: '8px' }}>
+              {allDocuments.length > 0 && (
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: theme.textSub, fontWeight: '600', marginRight: '4px' }}>Сортировка:</span>
+                  {[['name', 'По имени'], ['date', 'По дате'], ['size', 'По размеру']].map(([field, label]) => (
+                    <button
+                      key={field}
+                      onClick={() => handleSort(field)}
+                      style={{
+                        ...baseStyle, fontSize: '12px', padding: '4px 10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`,
+                        cursor: 'pointer', fontWeight: sortBy === field ? '700' : '500',
+                        backgroundColor: sortBy === field ? theme.btnBg : theme.tagBg,
+                        color: sortBy === field ? 'white' : theme.tagText,
+                        display: 'inline-flex', alignItems: 'center', gap: '4px'
+                      }}
+                    >
+                      {label}
+                      {sortBy === field && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
               {allDocuments.length === 0 ? (
                 <p style={{ color: theme.textSub, textAlign: 'center', padding: '20px' }}>Документы отсутствуют</p>
               ) : (
-                allDocuments.map((doc) => (
+                sortedDocuments.map((doc) => (
                   <div key={doc.id} style={{ ...baseStyle, padding: '12px', marginBottom: '8px', backgroundColor: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)', borderRadius: '12px', border: `1px solid ${theme.cardBorder}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <h4 style={{ fontSize: '15px', fontWeight: '600', color: theme.textMain, margin: 0 }}>{doc.filename}</h4>
@@ -403,6 +440,7 @@ function App() {
                   </div>
                 ))
               )}
+              </div>
             </div>
           )}
         </div>
