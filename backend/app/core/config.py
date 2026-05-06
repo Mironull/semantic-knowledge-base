@@ -1,7 +1,7 @@
 """
 Application configuration settings.
 """
-from typing import List, Dict, Any
+from typing import List, Dict
 from pydantic_settings import BaseSettings
 
 
@@ -25,9 +25,16 @@ class Settings(BaseSettings):
 
     # Database configuration
     DB_FILE: str = "docstore.db"
+    EMBEDDINGS_DB_FILE: str = "embeddings.db"
 
     # CORS configuration
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+
+    # ML configuration
+    ML_MODEL_NAME: str = "paraphrase-multilingual-mpnet-base-v2"
+    ML_DEVICE: str = "cpu"
+    ML_CHUNK_SIZE: int = 400
+    ML_TOP_K: int = 3
 
     class Config:
         env_file = ".env"

@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import APIRouter, File, UploadFile, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
 from app.models import DocumentMetadata, DocumentMetadataWithSize, DocumentSearchResult
 from app.services import DatabaseManager, DocumentParserService
 from app.ml import EmbeddingService, EmbeddingDatabase
@@ -19,8 +20,11 @@ router = APIRouter()
 # Initialize services (singleton pattern)
 db_manager = DatabaseManager()
 parser_service = DocumentParserService()
-embedding_service = EmbeddingService()
-embedding_db = EmbeddingDatabase()
+embedding_service = EmbeddingService(
+    model_name=settings.ML_MODEL_NAME,
+    device=settings.ML_DEVICE,
+)
+embedding_db = EmbeddingDatabase(db_file=settings.EMBEDDINGS_DB_FILE)
 
 
 @router.post(
@@ -89,7 +93,7 @@ async def upload_document(
             text_content = parsed_data.get("content", "")
 
             if text_content and isinstance(text_content, str):
-                chunks = embedding_service.split_into_chunks(text_content)
+                chunks = embedding_service.split_into_chunks(text_content, chunk_size=settings.ML_CHUNK_SIZE)
                 if chunks:
                     embeddings = embedding_service.generate_embeddings_batch(chunks)
                     if embeddings is not None:
@@ -219,8 +223,7 @@ async def search_documents(
                                 "chunk_index": chunk_idx,
                             }
 
-                    # Sort by score descending, take top 20
-                    ranked = sorted(best_per_doc.items(), key=lambda x: x[1]["score"], reverse=True)[:3]
+                    ranked = sorted(best_per_doc.items(), key=lambda x: x[1]["score"], reverse=True)[:settings.ML_TOP_K]
 
                     results = []
                     for doc_id, best in ranked:

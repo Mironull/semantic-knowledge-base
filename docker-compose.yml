@@ -13,7 +13,16 @@ services:
     environment:
       - APP_NAME=Knowledge Base API
       - DB_FILE=/app/data/docstore.db
-      # - CORS_ORIGINS=http://localhost:3000,http://localhost:80,http://frontend
+      - EMBEDDINGS_DB_FILE=/app/data/embeddings.db
+      # CORS_ORIGINS=http://localhost:3000,http://localhost:80,http://frontend
+      # ML — сменить модель:
+      #   paraphrase-multilingual-mpnet-base-v2  (по умолчанию, 1.5 ГБ, 50+ языков)
+      #   paraphrase-multilingual-MiniLM-L12-v2  (420 МБ, 50+ языков, быстрее)
+      #   all-MiniLM-L6-v2                       (90 МБ, только EN, самая быстрая)
+      - ML_MODEL_NAME=paraphrase-multilingual-mpnet-base-v2
+      - ML_DEVICE=cpu
+      - ML_CHUNK_SIZE=400
+      - ML_TOP_K=3
     volumes:
       # Persist databases
       - ./data:/app/data
