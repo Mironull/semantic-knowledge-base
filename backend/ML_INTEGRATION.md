@@ -1,292 +1,224 @@
-# Machine Learning Integration
+# ML-интеграция — Семантический поиск
 
-## Overview
+## Обзор
 
-The backend now includes semantic search capabilities powered by sentence-transformers. The ML functionality is integrated transparently into the existing document upload and search workflows.
+Модуль машинного обучения встроен прозрачно в процессы загрузки и поиска документов. Использует sentence-transformers для генерации векторных эмбеддингов и косинусного сравнения.
 
-## Architecture
-
-### Separate Database Design
-- **Main Database** (`docstore.db`): Stores document metadata and binary content
-- **Embeddings Database** (`embeddings.db`): Stores vector embeddings separately
-- This separation ensures clean data isolation and independent scaling
-
-### ML Module Structure
+## Структура модуля
 
 ```
 backend/app/ml/
-├── __init__.py              # Module exports
-├── model_registry.py        # Singleton model manager
-├── embedding_service.py     # High-level embedding service
-├── embedding_db.py          # Embeddings database manager
-└── text_preprocessor.py     # Text cleaning and normalization
+├── __init__.py              # Экспорты модуля
+├── model_registry.py        # Singleton-менеджер модели
+├── embedding_service.py     # Высокоуровневый интерфейс
+├── embedding_db.py          # SQLite-хранилище чанков
+└── text_preprocessor.py     # Очистка и нормализация текста
 ```
 
-## Key Components
+## Компоненты
 
-### 1. ModelRegistry (`model_registry.py`)
-- **Purpose**: Manages the lifecycle of the SentenceTransformer model
-- **Features**:
-  - Singleton pattern for efficient memory usage
-  - Automatic model loading and warm-up
-  - Device management (CPU/CUDA)
-  - Model metadata tracking
-- **Model**: `paraphrase-multilingual-mpnet-base-v2`
-  - 768-dimensional embeddings
-  - Supports 50+ languages including Russian
-  - ~420M parameters
+### ModelRegistry (`model_registry.py`)
 
-### 2. EmbeddingService (`embedding_service.py`)
-- **Purpose**: High-level interface for generating embeddings
-- **Features**:
-  - Text preprocessing integration
-  - Batch processing with chunking
-  - Cosine similarity computation
-  - Graceful error handling
-- **Methods**:
-  - `generate_embedding(text)` - Single text embedding
-  - `generate_embeddings_batch(texts)` - Batch processing
-  - `find_most_similar(query, docs)` - Semantic search
-  - `compute_similarity(emb1, emb2)` - Similarity score
+Управляет жизненным циклом `SentenceTransformer`-модели по паттерну Singleton: модель загружается один раз и переиспользуется всеми запросами.
 
-### 3. TextPreprocessor (`text_preprocessor.py`)
-- **Purpose**: Clean and normalize text before embedding
-- **Transformations**:
-  - Unicode normalization (NFC)
-  - HTML tag stripping
-  - URL and email removal
-  - Whitespace collapsing
-  - Text truncation (10,000 chars)
-  - Optional lowercasing
+- Автоматическая загрузка и прогрев модели при старте
+- Управление устройством (CPU / CUDA)
+- Хранение метаданных модели (размерность, количество параметров)
 
-### 4. EmbeddingDatabase (`embedding_db.py`)
-- **Purpose**: Persist and retrieve vector embeddings
-- **Storage**: SQLite database with BLOB fields
-- **Schema**:
-  ```sql
-  CREATE TABLE embeddings (
-      doc_id TEXT PRIMARY KEY,
-      embedding BLOB NOT NULL,
-      embedding_dim INTEGER NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )
-  ```
-- **Methods**:
-  - `store_embedding(doc_id, embedding)` - Save vector
-  - `get_embedding(doc_id)` - Retrieve single vector
-  - `get_all_embeddings()` - Bulk retrieval for search
-  - `delete_embedding(doc_id)` - Remove vector
+### EmbeddingService (`embedding_service.py`)
 
-## Integration Points
+Высокоуровневый интерфейс для работы с эмбеддингами.
 
-### 1. Document Upload (`/upload`)
-**Automatic Embedding Generation**:
-1. Document uploaded and stored in main database
-2. Text extracted using `DocumentParserService`
-3. Text preprocessed and cleaned
-4. Embedding generated using sentence-transformers
-5. Embedding stored in separate embeddings database
-6. Process is transparent to API clients
+| Метод | Описание |
+|-------|----------|
+| `generate_embedding(text)` | Генерация вектора для одного текста |
+| `generate_embeddings_batch(texts)` | Пакетная генерация |
+| `find_most_similar(query_emb, chunks)` | Поиск похожих чанков |
+| `compute_similarity(emb1, emb2)` | Косинусное сходство двух векторов |
+| `is_available()` | Проверка доступности ML |
 
-**Code Flow**:
-```python
-# 1. Store document
-metadata = db_manager.insert_document(...)
+**Предобработка текста** (через `TextPreprocessor`):
+- NFC-нормализация Unicode
+- Удаление HTML-тегов
+- Удаление URL и email
+- Коллапс пробелов
+- Усечение до 10 000 символов
 
-# 2. Extract text
-parsed_data = parser_service.parse_document(...)
-text_content = parsed_data.get("content", "")
+### EmbeddingDatabase (`embedding_db.py`)
 
-# 3. Generate and store embedding
-if embedding_service.is_available():
-    embedding = embedding_service.generate_embedding(text_content)
-    embedding_db.store_embedding(doc_id, embedding)
+Хранилище чанков в SQLite (`embeddings.db`).
+
+```sql
+CREATE TABLE chunks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id        TEXT NOT NULL,
+    chunk_index   INTEGER NOT NULL,
+    chunk_text    TEXT,
+    embedding     BLOB NOT NULL,       -- numpy-массив, сериализованный через numpy.tobytes()
+    embedding_dim INTEGER NOT NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-### 2. Document Search (`/search`)
-**Semantic Search with Fallback**:
-1. Query embedding generated from search text
-2. All document embeddings retrieved from database
-3. Cosine similarity computed for all documents
-4. Results sorted by similarity score
-5. Top K documents returned (default: 20)
-6. Falls back to filename search if ML unavailable
+| Метод | Описание |
+|-------|----------|
+| `store_chunks(doc_id, chunks, embeddings)` | Сохранить чанки документа |
+| `get_all_chunks()` | Получить все чанки для поиска |
+| `delete_chunks(doc_id)` | Удалить все чанки документа |
+| `get_chunk_count()` | Количество сохранённых чанков |
 
-**Code Flow**:
-```python
-# 1. Generate query embedding
-query_embedding = embedding_service.generate_embedding(query)
+## Конвейер данных
 
-# 2. Get all document embeddings
-doc_ids, doc_embeddings = embedding_db.get_all_embeddings()
+### Загрузка документа (`POST /upload`)
 
-# 3. Find most similar
-similar_docs = embedding_service.find_most_similar(
-    query_embedding, doc_embeddings, doc_ids, top_k=20
-)
-
-# 4. Retrieve metadata
-results = [db_manager.get_document_metadata(doc_id)
-           for doc_id, score in similar_docs]
+```
+Входной файл (PDF / DOCX / TXT / ...)
+        │
+        ▼
+DatabaseManager.insert_document()
+  → Сохраняется в docstore.db (BLOB + метаданные)
+        │
+        ▼
+DocumentParserService.parse_document()
+  → Извлечение текста согласно MIME-типу
+        │
+        ▼
+TextPreprocessor
+  → Unicode NFC, очистка HTML, усечение до 10 000 символов
+        │
+        ▼
+Разбивка текста на чанки (chunk splitting)
+        │
+        ▼
+EmbeddingService.generate_embeddings_batch(chunks)
+  → Пакетная генерация 384-мерных векторов
+        │
+        ▼
+EmbeddingDatabase.store_chunks(doc_id, chunks, embeddings)
+  → Запись в embeddings.db
 ```
 
-## Graceful Degradation
+Весь процесс прозрачен для API-клиента: ответ возвращается сразу после сохранения документа.
 
-The system handles ML unavailability gracefully:
+### Семантический поиск (`GET /search?name=...`)
 
-1. **Missing Dependencies**: If `sentence-transformers` not installed:
-   - Service initialization succeeds with warnings
-   - Upload works normally (embeddings not generated)
-   - Search falls back to filename matching
-
-2. **Model Loading Failure**: If model fails to load:
-   - Service marked as unavailable
-   - All operations continue with fallback behavior
-
-3. **Runtime Errors**: If embedding generation fails:
-   - Error logged but not propagated
-   - Document still saved successfully
-   - Search falls back to filename matching
-
-## Dependencies
-
-```txt
-sentence-transformers==2.2.2  # Core ML library
-numpy==1.24.3                 # Vector operations
+```
+Текст запроса
+        │
+        ▼
+EmbeddingService.generate_embedding(query)
+  → Вектор запроса (384 измерения)
+        │
+        ▼
+EmbeddingDatabase.get_all_chunks()
+  → Все сохранённые чанки с векторами
+        │
+        ▼
+Косинусное сходство: query_emb · chunk_emb
+  → Оценка для каждого чанка
+        │
+        ▼
+Агрегация: выбор лучшего чанка по каждому doc_id
+        │
+        ▼
+Сортировка по оценке, возврат топ-N документов
+  → DocumentSearchResult { similarity_score, chunk_text, chunk_index, ... }
+        │
+        ▼ (если ML недоступен)
+DatabaseManager.search_documents(query)
+  → Поиск по имени файла (fallback)
 ```
 
-### Transitive Dependencies
-- PyTorch (installed by sentence-transformers)
-- Transformers library (Hugging Face)
-- tokenizers
-- scipy
+## Деградация при недоступности ML
 
-## Configuration
+| Ситуация | Поведение |
+|----------|-----------|
+| `sentence-transformers` не установлен | Загрузка работает, эмбеддинги не генерируются, поиск по имени файла |
+| Модель не загружается | `is_available()` → False, fallback-поиск |
+| Ошибка генерации эмбеддинга | Логируется, документ всё равно сохраняется |
 
-### Model Selection
-Default: `paraphrase-multilingual-mpnet-base-v2`
+## Конфигурация модели
 
-To use a different model, modify `EmbeddingService` initialization:
+По умолчанию используется `paraphrase-multilingual-mpnet-base-v2`. Для смены модели отредактировать инициализацию `EmbeddingService` в `app/api/routes/documents.py`:
+
 ```python
 embedding_service = EmbeddingService(
-    model_name='all-MiniLM-L6-v2',  # Smaller, faster model
-    device='cuda',                   # Use GPU if available
+    model_name='paraphrase-multilingual-MiniLM-L12-v2',  # 384 dims, 420 МБ, 50+ языков, быстрее
+    device='cpu',
     enable_preprocessing=True
 )
 ```
 
-### Device Configuration
-- **CPU**: Default, works everywhere
-- **CUDA**: Requires NVIDIA GPU with CUDA support
-- **MPS**: Apple Silicon (experimental)
+После смены модели необходимо очистить кэш и пересгенерировать эмбеддинги:
 
-### Preprocessing Options
-```python
-preprocessor = TextPreprocessor(
-    lowercase=False,        # Preserve case (recommended for multilingual)
-    strip_html=True,       # Remove HTML tags
-    max_length=10000,      # Truncate long texts
-    enable=True            # Enable preprocessing
-)
+```bash
+# Очистить кэш модели
+docker volume rm <project>_model-cache
+
+# Пересобрать и перезапустить
+docker compose build --no-cache backend
+docker compose up -d
 ```
 
-## Performance Characteristics
+## Производительность
 
-### Model Loading
-- **Time**: ~2-5 seconds (first load downloads model ~1.5GB)
-- **Memory**: ~1.5GB RAM
-- **Cached**: Subsequent loads are instant
+| Операция | Время (CPU, paraphrase-multilingual-mpnet-base-v2) |
+|----------|--------------------------------------------------|
+| Загрузка модели | 2–5 с (первый раз — загрузка ~1,5 ГБ) |
+| Один эмбеддинг | ~10–50 мс |
+| Пакет 32 текста | ~200–500 мс |
+| Поиск по 1 000 документов | ~50 мс |
+| Поиск по 10 000 документов | ~500 мс |
+| Загрузка документа с эмбеддингом | ~300–500 мс |
 
-### Embedding Generation
-- **Single Text**: ~10-50ms on CPU
-- **Batch (32 texts)**: ~200-500ms on CPU
-- **GPU**: 5-10x faster than CPU
+**Память:**
+- Модель в RAM: ~1,5 ГБ
+- Один эмбеддинг: 768 × 4 байта = 3 КБ
+- 10 000 чанков: ~30 МБ в `embeddings.db`
 
-### Search Performance
-- **100 documents**: <10ms
-- **1,000 documents**: ~50ms
-- **10,000 documents**: ~500ms
+Поиск масштабируется линейно. Для баз >100 тыс. документов рассмотрите FAISS или Milvus.
 
-Note: Search scales linearly with document count. For very large datasets (>100K documents), consider using vector databases (FAISS, Milvus, Pinecone).
+## Примеры запросов
 
-## Monitoring and Debugging
+```bash
+# Русский
+curl "http://localhost:8000/search?name=машинное+обучение"
+curl "http://localhost:8000/search?name=нейронные+сети"
 
-### Logs
-The ML service prints detailed logs:
+# Английский
+curl "http://localhost:8000/search?name=neural+networks"
+curl "http://localhost:8000/search?name=deep+learning"
+```
+
+Ответ содержит:
+```json
+[
+  {
+    "id": "uuid",
+    "filename": "document.pdf",
+    "content_type": "application/pdf",
+    "upload_date": "2026-05-06T12:00:00",
+    "size": 204800,
+    "similarity_score": 0.87,
+    "chunk_text": "...релевантный фрагмент...",
+    "chunk_index": 2
+  }
+]
+```
+
+## Мониторинг
+
+Логи ML-сервиса при старте:
 ```
 Loading model 'paraphrase-multilingual-mpnet-base-v2' on device 'cpu'...
-Model loaded in 2.34s | dim=768 | params=420,194,304 | max_seq=512
+Model loaded in 3.2s | dim=768 | params=420M | max_seq=512
 Running warm-up inference...
 Warm-up complete.
-Encoded single text in 0.0234s | len=150 | norm=1.0000
-Semantic search returned 15 results
 ```
 
-### Health Check
-Check if ML service is operational:
+Проверка доступности:
 ```python
 if embedding_service.is_available():
-    print("ML service ready")
-    print(f"Embedding dimension: {embedding_service.get_embedding_dimension()}")
+    dim = embedding_service.get_embedding_dimension()  # 768
+    count = embedding_db.get_chunk_count()
 ```
-
-### Database Stats
-```python
-count = embedding_db.get_embedding_count()
-print(f"Total embeddings stored: {count}")
-```
-
-## Example Queries
-
-### Russian Language
-- "машинное обучение" → finds ML documents in Russian
-- "нейронные сети" → finds neural network documents
-- "анализ данных" → finds data analysis documents
-
-### English Language
-- "neural networks" → finds related documents
-- "deep learning architectures" → semantic match
-- "python programming" → finds relevant code/docs
-
-### Mixed Queries
-The model handles code-switched queries:
-- "python и машинное обучение"
-- "API documentation для deep learning"
-
-## Troubleshooting
-
-### Issue: Model not loading
-**Symptoms**: Warnings about unavailable ML features
-
-**Solutions**:
-1. Install dependencies: `pip install sentence-transformers numpy`
-2. Check internet connection (first run downloads model)
-3. Verify disk space (~1.5GB required)
-
-### Issue: Slow embedding generation
-**Symptoms**: Upload takes >10 seconds per document
-
-**Solutions**:
-1. Use GPU: Set `device='cuda'` in EmbeddingService
-2. Use smaller model: `all-MiniLM-L6-v2` (384 dims, 3x faster)
-3. Disable preprocessing if not needed
-
-### Issue: Search returns irrelevant results
-**Symptoms**: Low-quality semantic matches
-
-**Solutions**:
-1. Check that embeddings were generated (verify embeddings.db)
-2. Ensure queries are meaningful (avoid single words)
-3. Consider adjusting `top_k` parameter
-4. Verify document text extraction quality
-
-## Future Enhancements
-
-Potential improvements:
-1. **Vector Database**: Use FAISS/Milvus for large-scale deployments
-2. **Hybrid Search**: Combine semantic + keyword + metadata filters
-3. **Reranking**: Use cross-encoder for better result quality
-4. **Batch Reindexing**: Background job to regenerate embeddings
-5. **Query Expansion**: Use embeddings to suggest related queries
-6. **Multilingual Models**: Support language-specific models
-7. **Fine-tuning**: Domain-specific model adaptation

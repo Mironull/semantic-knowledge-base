@@ -1,411 +1,293 @@
-# Knowledge Base Search Application
+# База знаний — Семантический поиск документов
 
-Full-stack knowledge base with semantic search powered by machine learning. Upload documents and search using natural language queries in multiple languages including Russian.
+Полнофункциональное приложение для хранения документов и семантического поиска на базе машинного обучения. Загружайте документы и ищите по смыслу запроса на русском, английском и ещё 50+ языках.
 
-## Features
+## Стек технологий
 
-- 📄 **Multi-format Support**: PDF, DOCX, TXT, JSON, XML
-- 🔍 **Semantic Search**: ML-powered search that understands meaning
-- 🌐 **Multilingual**: Supports Russian, English, and 50+ languages
-- 🤖 **Automatic Embeddings**: Generated on upload, transparent to users
-- 👁️ **Document Preview**: View content before downloading
-- 📦 **Dual Databases**: Separate storage for documents and embeddings
-- 🎯 **Modern UI**: React frontend with dark mode
-- 🚀 **FastAPI Backend**: High-performance REST API
-- 🐳 **Docker Ready**: Easy deployment with Docker Compose
+**Бэкенд**: Python 3.12, FastAPI, SQLite, sentence-transformers, PyTorch (CPU)  
+**Фронтенд**: React 19, Create React App, Nginx (в Docker)  
+**Инфраструктура**: Docker, Docker Compose
 
-## Quick Start with Docker (Recommended)
+## Быстрый старт с Docker
 
-### Prerequisites
+### Требования
 
-- Docker (version 20.10+)
-- Docker Compose (version 2.0+)
+- Docker 20.10+
+- Docker Compose 2.0+
+- 5 ГБ свободного места на диске
 
-### Start the Application
+### Запуск
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+# Клонировать репозиторий
+git clone <url-репозитория>
 cd knoweledge-base
 
-# Start all services
+# Запустить все сервисы
 docker compose up -d
 
-# Or use Make
+# Или через Make
 make up
 ```
 
-Access the application:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+Доступ к приложению:
+- **Фронтенд**: http://localhost:3000
+- **Бэкенд API**: http://localhost:8000
+- **Swagger UI**: http://localhost:8000/docs
 
-### Stop the Application
+### Остановка
 
 ```bash
 docker compose down
-
-# Or use Make
+# или
 make down
 ```
 
-For detailed Docker documentation, see [DOCKER_DEPLOYMENT.md](./DOCKER_DEPLOYMENT.md)
+## Локальная разработка
 
-## Local Development Setup
-
-### Backend Setup
+### Бэкенд
 
 ```bash
 cd backend
 
-# Create and activate virtual environment
+# Создать и активировать виртуальное окружение
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Install dependencies
+# Установить зависимости
 pip install -r requirements.txt
 
-# Run the server
+# Запустить сервер
 uvicorn main:app --reload
 ```
 
-Backend runs at: http://localhost:8000
+Бэкенд работает на: http://localhost:8000
 
-### Frontend Setup
+### Фронтенд
 
 ```bash
 cd frontend
 
-# Install dependencies
 npm install
-
-# Start development server
 npm start
 ```
 
-Frontend runs at: http://localhost:3000
+Фронтенд работает на: http://localhost:3000
 
-## Architecture
+## Архитектура
 
-### Backend (`/backend`)
+### Бэкенд (`/backend`)
 
-- **Framework**: FastAPI + Uvicorn
-- **Language**: Python 3.11
-- **Databases**: SQLite (documents + embeddings)
-- **ML**: sentence-transformers (paraphrase-multilingual-mpnet-base-v2)
-- **Features**:
-  - RESTful API with automatic OpenAPI docs
-  - Document parsing for multiple formats
-  - Semantic search with embeddings
-  - Multilingual support
+Модульная архитектура с чётким разделением слоёв:
 
-**Structure**:
 ```
 backend/
 ├── app/
-│   ├── api/routes/      # HTTP endpoints
-│   ├── services/        # Business logic
-│   ├── ml/              # Machine learning
-│   ├── models/          # Data models
-│   └── core/            # Configuration
-├── main.py              # Entry point
-├── requirements.txt     # Dependencies
-└── Dockerfile          # Docker build
+│   ├── __init__.py          # Фабрика приложения (create_app)
+│   ├── api/routes/          # HTTP-эндпоинты
+│   │   ├── documents.py     # CRUD документов + поиск
+│   │   └── health.py        # Проверка работоспособности
+│   ├── services/            # Бизнес-логика
+│   │   ├── database.py      # DatabaseManager (SQLite)
+│   │   └── document_parser.py  # Парсинг форматов (Strategy)
+│   ├── ml/                  # Машинное обучение
+│   │   ├── model_registry.py    # Singleton-менеджер модели
+│   │   ├── embedding_service.py # Генерация эмбеддингов
+│   │   ├── embedding_db.py      # SQLite для чанков
+│   │   └── text_preprocessor.py # Очистка текста
+│   ├── models/              # Pydantic-модели
+│   │   └── document.py
+│   └── core/                # Конфигурация
+│       └── config.py
+├── main.py                  # Точка входа
+├── requirements.txt
+└── Dockerfile
 ```
 
-### Frontend (`/frontend`)
+### Фронтенд (`/frontend`)
 
-- **Framework**: React 19
-- **Build Tool**: Create React App
-- **Server**: Nginx (in Docker)
-- **Features**:
-  - Modern responsive UI
-  - Dark mode support
-  - Voice search (Russian)
-  - Document preview modal
-  - Search history
-
-**Structure**:
 ```
 frontend/
 ├── src/
-│   ├── App.js           # Main component
-│   └── index.js         # Entry point
-├── public/              # Static assets
-├── package.json         # Dependencies
-├── Dockerfile          # Docker build
-└── nginx.conf          # Production server config
+│   ├── App.js               # Главный компонент
+│   └── index.js
+├── public/
+├── package.json
+├── Dockerfile
+└── nginx.conf               # Конфигурация Nginx для production
 ```
 
-## API Endpoints
+## API-эндпоинты
 
-### Documents
+### Документы
 
-- `POST /upload` - Upload document with auto-embedding generation
-- `GET /download/{doc_id}` - Download document
-- `GET /search?name={query}` - Semantic search
-- `GET /documents` - List all documents
-- `GET /preview/{doc_id}` - Preview document text
+| Метод | URL | Описание |
+|-------|-----|----------|
+| `POST` | `/upload` | Загрузить документ (автогенерация эмбеддингов) |
+| `GET` | `/documents` | Список всех документов с метаданными |
+| `GET` | `/search?name={запрос}` | Семантический поиск |
+| `GET` | `/preview/{doc_id}` | Просмотр текста документа |
+| `GET` | `/download/{doc_id}` | Скачать документ |
+| `DELETE` | `/documents/{doc_id}` | Удалить документ и его эмбеддинги |
 
-### Health
+### Служебные
 
-- `GET /` - API health check
+| Метод | URL | Описание |
+|-------|-----|----------|
+| `GET` | `/` | Приветственное сообщение |
+| `GET` | `/health` | Проверка работоспособности |
 
-Full API documentation: http://localhost:8000/docs
+Интерактивная документация: http://localhost:8000/docs
 
-## Machine Learning
+## Машинное обучение
 
-The application uses **sentence-transformers** for semantic search:
+Приложение использует **sentence-transformers** для семантического поиска.
 
-- **Model**: `paraphrase-multilingual-mpnet-base-v2`
-- **Dimensions**: 768
-- **Languages**: 50+ including Russian and English
-- **Search Method**: Cosine similarity
+### Текущая модель: `paraphrase-multilingual-mpnet-base-v2`
 
-### How It Works
+| Параметр | Значение |
+|----------|----------|
+| Размерность эмбеддинга | 768 |
+| Размер модели | ~1,5 ГБ |
+| Поддерживаемые языки | 50+, включая русский |
+| Устройство | CPU |
 
-1. **Upload**: Document → Text extraction → Embedding generation → Storage
-2. **Search**: Query → Embedding generation → Similarity computation → Ranked results
-3. **Fallback**: If ML unavailable, falls back to filename search
+### Конвейер обработки
 
-See [ML_INTEGRATION.md](./backend/ML_INTEGRATION.md) for details.
+**При загрузке документа:**
+1. Документ сохраняется в `docstore.db`
+2. Текст извлекается через `DocumentParserService`
+3. Текст разбивается на чанки
+4. Каждый чанк встраивается в вектор
+5. Чанки сохраняются в `embeddings.db` (таблица `chunks`)
 
-## Configuration
+**При поиске:**
+1. Запрос преобразуется в вектор
+2. Из базы извлекаются все чанки
+3. Вычисляется косинусное сходство
+4. Для каждого документа выбирается лучший чанк
+5. Возвращается топ-N документов с оценкой похожести
 
-### Backend Configuration
+**Деградация:** если ML недоступен, поиск переключается на поиск по имени файла.
 
-Create `backend/.env`:
+## Базы данных
+
+| База | Файл | Содержимое |
+|------|------|------------|
+| Документы | `docstore.db` | id, filename, content_type, data (BLOB), upload_date |
+| Эмбеддинги | `embeddings.db` | doc_id, chunk_index, chunk_text, embedding (BLOB), embedding_dim |
+
+В Docker данные хранятся в томах и сохраняются между перезапусками.
+
+## Поддерживаемые форматы
+
+PDF, DOCX, TXT, JSON, XML, HTML, CSV
+
+## Конфигурация
+
+### Бэкенд (`backend/.env`)
+
 ```bash
 APP_NAME=Knowledge Base API
 DB_FILE=/app/data/docstore.db
 CORS_ORIGINS=http://localhost:3000,http://localhost:80
 ```
 
-### Frontend Configuration
+### Фронтенд (`frontend/.env`)
 
-Create `frontend/.env`:
 ```bash
 REACT_APP_API_URL=http://localhost:8000
 ```
 
-## Docker Deployment
-
-### Using Makefile
+## Docker-команды
 
 ```bash
-# Build images
-make build
+# Сборка образов
+make build          # или: docker compose build
 
-# Start services
-make up
+# Запуск
+make up             # или: docker compose up -d
 
-# View logs
-make logs
+# Логи
+make logs           # или: docker compose logs -f
 
-# Restart services
-make restart
+# Перезапуск
+make restart        # или: docker compose restart
 
-# Stop services
-make down
+# Остановка
+make down           # или: docker compose down
 
-# Full cleanup
-make clean
-
-# Complete rebuild
-make rebuild
+# Полная очистка с томами
+make clean          # или: docker compose down -v
 ```
 
-### Manual Docker Commands
+## Примеры запросов к API
 
 ```bash
-# Build
-docker compose build
+# Загрузить документ
+curl -X POST http://localhost:8000/upload -F "file=@document.pdf"
 
-# Start
-docker compose up -d
+# Поиск на русском
+curl "http://localhost:8000/search?name=машинное+обучение"
 
-# Logs
-docker compose logs -f
-
-# Stop
-docker compose down
-```
-
-### Data Persistence
-
-Data is persisted in Docker volumes:
-- `backend-data`: Stores SQLite databases
-- `model-cache`: Caches ML models (~1.5GB)
-
-Volumes survive container restarts. To backup:
-```bash
-make backup
-```
-
-## Common Tasks
-
-### Upload a Document
-
-```bash
-curl -X POST http://localhost:8000/upload \
-  -F "file=@document.pdf"
-```
-
-### Search Documents
-
-```bash
-# Semantic search
+# Поиск на английском
 curl "http://localhost:8000/search?name=machine+learning"
 
-# Russian query
-curl "http://localhost:8000/search?name=машинное+обучение"
-```
-
-### List All Documents
-
-```bash
+# Список всех документов
 curl http://localhost:8000/documents
+
+# Удалить документ
+curl -X DELETE http://localhost:8000/documents/{doc_id}
 ```
 
-### Download Document
+## Производительность
 
+| Операция | Время (CPU) |
+|----------|-------------|
+| Загрузка модели | 1–2 с |
+| Генерация одного эмбеддинга | ~8 мс |
+| Пакетная обработка (32 текста) | ~150 мс |
+| Поиск (1000 документов) | ~20 мс |
+| Загрузка документа с эмбеддингом | ~200 мс |
+
+**Потребление памяти**: бэкенд ~300 МБ, фронтенд ~50 МБ, модель ~100 МБ.
+
+## Устранение неполадок
+
+**Бэкенд не запускается:**
 ```bash
-curl -O http://localhost:8000/download/{doc_id}
+docker compose logs backend
+# Проверить занятость порта 8000, права на файлы
 ```
 
-## Development
-
-### Backend Testing
-
+**Фронтенд не подключается к бэкенду:**
 ```bash
-cd backend
-pytest
+curl http://localhost:8000/health
+# Ожидается: {"status": "healthy"}
+# Проверить REACT_APP_API_URL и CORS_ORIGINS
 ```
 
-### Frontend Testing
-
+**ML не работает:**
 ```bash
-cd frontend
-npm test
+# Проверить наличие 5 ГБ свободного места
+# Проверить логи при первом запуске — загрузка модели занимает время
+docker compose logs backend | grep -i model
 ```
 
-### Code Formatting
-
-Backend (Python):
+**Сброс данных:**
 ```bash
-cd backend
-black app/
-isort app/
+docker compose down -v && docker compose up -d
 ```
 
-Frontend (JavaScript):
-```bash
-cd frontend
-npm run format
-```
+## Документация
 
-## Troubleshooting
+- [Быстрый старт](./QUICKSTART.md)
+- [История изменений](./CHANGELOG.md)
+- [Архитектура бэкенда](./backend/ARCHITECTURE.md)
+- [ML-интеграция](./backend/ML_INTEGRATION.md)
+- [Информация о модели](./backend/ML_MODEL_INFO.md)
+- [Swagger UI](http://localhost:8000/docs) (при запущенном сервере)
 
-### Backend won't start
-
-1. Check if port 8000 is available
-2. Verify Python dependencies installed
-3. Check logs: `docker compose logs backend`
-
-### Frontend can't connect to backend
-
-1. Verify backend is running: `curl http://localhost:8000/health`
-2. Check CORS settings in backend configuration
-3. Verify `REACT_APP_API_URL` in frontend `.env`
-
-### ML features not working
-
-1. Check if sentence-transformers installed
-2. Verify disk space (~1.5GB for model)
-3. Check backend logs for model loading errors
-4. Wait for first-time model download
-
-### Database issues
-
-1. Check volume permissions
-2. Verify database files exist in volume
-3. Try resetting: `docker compose down -v && docker compose up -d`
-
-## Performance
-
-### Backend
-
-- **Single text embedding**: ~10-50ms (CPU)
-- **Batch embeddings**: ~200-500ms for 32 texts (CPU)
-- **Search (1000 docs)**: ~50ms
-- **Model loading**: ~2-5s (first time: downloads ~1.5GB)
-
-### Frontend
-
-- **Initial load**: ~500ms
-- **Search response**: <100ms (network + backend)
-- **Document preview**: <200ms
-
-### Optimization
-
-- Use GPU for 5-10x faster embeddings
-- Enable caching (already configured)
-- Use CDN for static assets
-- Scale backend horizontally
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## Documentation
-
-- [Docker Deployment Guide](./DOCKER_DEPLOYMENT.md)
-- [ML Integration Details](./backend/ML_INTEGRATION.md)
-- [Backend Architecture](./backend/ARCHITECTURE.md)
-- [API Documentation](http://localhost:8000/docs) (when running)
-
-## Tech Stack
-
-**Backend**:
-- FastAPI
-- SQLite
-- sentence-transformers
-- PyTorch
-- NumPy
-- PyPDF2, python-docx
-
-**Frontend**:
-- React 19
-- Create React App
-- Nginx (production)
-
-**Infrastructure**:
-- Docker & Docker Compose
-- Python 3.11
-- Node 18
-
-## License
+## Лицензия
 
 MIT License
-
-## Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Check existing documentation
-- Review API docs at `/docs`
-
-## Roadmap
-
-- [ ] User authentication
-- [ ] Document folders/tags
-- [ ] Advanced filters
-- [ ] Export search results
-- [ ] Batch document upload
-- [ ] Admin dashboard
-- [ ] Vector database integration (FAISS)
-- [ ] Multi-tenant support

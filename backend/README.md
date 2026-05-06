@@ -1,75 +1,124 @@
-# Document Store Backend
+# Бэкенд — Document Store API
 
-FastAPI backend for document storage with search and preview capabilities.
+FastAPI-бэкенд для хранения документов, семантического поиска и предпросмотра. Python 3.12, SQLite, sentence-transformers.
 
-## Features
+## Функции
 
-- 📄 Multiple file format support: PDF, DOCX, TXT, JSON, XML
-- 🔍 Full-text search by filename
-- 👁️ Document preview for text-based formats
-- 📦 SQLite database for storage
-- 🎯 Modular architecture with independent components
-- 🔒 Type-safe with full type annotations
+- Загрузка и хранение документов (PDF, DOCX, TXT, JSON, XML, HTML, CSV)
+- Семантический поиск на базе ML-эмбеддингов
+- Предпросмотр текстовых документов
+- Автоматическая генерация эмбеддингов при загрузке
+- Деградация: при недоступности ML — поиск по имени файла
+- Модульная архитектура с полным разделением слоёв
 
-### Working with Virtual Environment
+## Запуск
+
+### Виртуальное окружение
 
 ```bash
-# init venv
+# Создать
 python -m venv ./venv
-# activate venv
-source ./venv/bin/activate
-```
 
-```bash
-# deactive venv
+# Активировать
+source ./venv/bin/activate      # Linux / macOS
+# venv\Scripts\activate          # Windows
+
+# Деактивировать
 deactivate
 ```
 
-### Installing dependencies
+### Установка зависимостей
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### Running the server
+### Запуск сервера
 
 ```bash
-# Option 1: Using uvicorn directly
+# С горячей перезагрузкой (для разработки)
 uvicorn main:app --reload
 
-# Option 2: Using Python
-python main.py
+# Без горячей перезагрузки
+uvicorn main:app
 ```
 
-**Endpoints:**
-- API: http://127.0.0.1:8000
-- **Swagger UI**: http://127.0.0.1:8000/docs
-- **ReDoc**: http://127.0.0.1:8000/redoc
-- OpenAPI Spec: http://127.0.0.1:8000/openapi.json
-- Health Check: http://127.0.0.1:8000/health
+## Адреса
 
-## Architecture
+| URL | Описание |
+|-----|----------|
+| http://127.0.0.1:8000 | API |
+| http://127.0.0.1:8000/docs | Swagger UI |
+| http://127.0.0.1:8000/redoc | ReDoc |
+| http://127.0.0.1:8000/openapi.json | OpenAPI-спецификация |
+| http://127.0.0.1:8000/health | Проверка работоспособности |
 
-The backend uses a modular architecture with independent components:
+## API-эндпоинты
+
+| Метод | URL | Описание |
+|-------|-----|----------|
+| `POST` | `/upload` | Загрузить документ + сгенерировать эмбеддинги |
+| `GET` | `/documents` | Список документов с метаданными и размером |
+| `GET` | `/search?name={запрос}` | Семантический поиск |
+| `GET` | `/preview/{doc_id}` | Предпросмотр текста документа |
+| `GET` | `/download/{doc_id}` | Скачать документ |
+| `DELETE` | `/documents/{doc_id}` | Удалить документ и его эмбеддинги |
+| `GET` | `/` | Приветствие |
+| `GET` | `/health` | Статус сервиса |
+
+## Структура проекта
 
 ```
-app/
-├── api/routes/      # HTTP endpoints
-├── services/        # Business logic
-├── models/          # Data models
-└── core/            # Configuration
+backend/
+├── app/
+│   ├── __init__.py              # Фабрика приложения create_app()
+│   ├── api/
+│   │   └── routes/
+│   │       ├── documents.py     # Эндпоинты документов
+│   │       └── health.py        # Эндпоинты здоровья
+│   ├── services/
+│   │   ├── database.py          # DatabaseManager (SQLite)
+│   │   └── document_parser.py   # Парсеры форматов (Strategy)
+│   ├── ml/
+│   │   ├── model_registry.py    # Singleton-менеджер модели
+│   │   ├── embedding_service.py # Генерация эмбеддингов
+│   │   ├── embedding_db.py      # Хранилище чанков
+│   │   └── text_preprocessor.py # Нормализация текста
+│   ├── models/
+│   │   └── document.py          # Pydantic-модели
+│   └── core/
+│       └── config.py            # Настройки (pydantic-settings)
+├── main.py                      # Точка входа
+├── requirements.txt
+├── Dockerfile
+├── docstore.db                  # SQLite: документы
+└── embeddings.db                # SQLite: эмбеддинги чанков
 ```
 
-See `app/README.md` for detailed architecture documentation.
+Подробная архитектура: [ARCHITECTURE.md](./ARCHITECTURE.md)
 
-## Configuration
+## Конфигурация
 
-Copy `.env.example` to `.env` and customize:
+Скопировать `.env.example` в `.env` и настроить:
 
 ```bash
-cp .env.example .env
+APP_NAME=Knowledge Base API
+DB_FILE=docstore.db              # Путь к базе документов
+CORS_ORIGINS=http://localhost:3000
 ```
 
-Configuration options:
-- `APP_NAME` - Application name
-- `DB_FILE` - SQLite database path
-- `CORS_ORIGINS` - Allowed CORS origins
+## Зависимости
+
+Ключевые пакеты из `requirements.txt`:
+
+| Пакет | Версия | Назначение |
+|-------|--------|------------|
+| fastapi | 0.135.3 | Web-фреймворк |
+| uvicorn | 0.44.0 | ASGI-сервер |
+| pydantic | 2.12.5 | Валидация данных |
+| pydantic-settings | 2.1.0 | Конфигурация |
+| sentence-transformers | 3.1.1 | ML-эмбеддинги |
+| torch | 2.2.2+cpu | CPU-версия PyTorch |
+| numpy | 1.26.4 | Работа с векторами |
+| PyPDF2 | 3.0.1 | Парсинг PDF |
+| python-docx | 1.1.0 | Парсинг DOCX |

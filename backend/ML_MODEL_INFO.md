@@ -1,168 +1,123 @@
-# ML Model Configuration
+# Информация о ML-модели
 
-## Current Model: all-MiniLM-L6-v2
+## Текущая модель: `paraphrase-multilingual-mpnet-base-v2`
 
-### Specifications
+### Характеристики
 
-- **Model Name**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Embedding Dimension**: 384
-- **Parameters**: ~22M (lightweight)
-- **Download Size**: ~90MB
-- **Device**: CPU only
-- **Languages**: Primarily English, limited multilingual support
+| Параметр | Значение |
+|----------|----------|
+| Полное имя | `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` |
+| Размерность эмбеддинга | 768 |
+| Количество параметров | ~420 млн |
+| Размер загрузки | ~1,5 ГБ |
+| Устройство | CPU (без CUDA) |
+| Поддерживаемые языки | 50+, включая русский |
+| Максимальная длина входа | 512 токенов |
 
-### Performance
+### Производительность (CPU)
 
-- **Encoding Speed** (CPU):
-  - Single text: ~5-15ms
-  - Batch (32 texts): ~100-200ms
-  - ~3-5x faster than multilingual models
+| Операция | Время |
+|----------|-------|
+| Загрузка модели (первый раз) | 2–5 с + загрузка ~1,5 ГБ |
+| Загрузка модели (из кэша) | 2–5 с |
+| Один текст | ~10–50 мс |
+| Пакет 32 текста | ~200–500 мс |
+| Поиск (1 000 документов) | ~50 мс |
+| Загрузка документа + эмбеддинг | ~300–500 мс |
 
-- **Quality**:
-  - Good for English semantic search
-  - Optimized for sentence similarity tasks
-  - Trained on large-scale datasets
+### Память
 
-### Why This Model?
+| Компонент | Объём |
+|-----------|-------|
+| Модель в RAM | ~1,5 ГБ |
+| Один эмбеддинг | 768 × 4 байта = 3 КБ |
+| 10 000 чанков | ~30 МБ |
 
-1. **Lightweight**: Only 90MB download vs 1.5GB for multilingual models
-2. **Fast**: 3-5x faster inference on CPU
-3. **No CUDA**: Works perfectly on CPU without GPU dependencies
-4. **Good Quality**: Excellent performance for English text
+### Почему эта модель
 
-### Alternative Models
+- Высокое качество семантического поиска
+- Нативная поддержка русского языка (50+ языков)
+- Подходит для многоязычных документов и запросов
 
-If you need multilingual support (Russian), you can switch to:
+### Интерпретация оценок схожести
 
-#### paraphrase-multilingual-MiniLM-L12-v2
-- **Dimensions**: 384
-- **Size**: ~420MB
-- **Languages**: 50+ including Russian
-- **Speed**: ~2x slower than all-MiniLM-L6-v2
+Модель возвращает косинусное сходство в диапазоне [0.0, 1.0]:
 
-To switch, edit `backend/app/ml/embedding_service.py`:
-```python
-def __init__(
-    self,
-    model_name: str = 'paraphrase-multilingual-MiniLM-L12-v2',  # Change here
-    device: str = 'cpu',
-    enable_preprocessing: bool = True
-):
-```
+| Диапазон | Интерпретация |
+|----------|---------------|
+| 0,9–1,0 | Практически идентичный смысл |
+| 0,7–0,9 | Высокая схожесть |
+| 0,5–0,7 | Умеренная схожесть |
+| 0,3–0,5 | Слабая связь |
+| 0,0–0,3 | Нет смысловой связи |
 
-And update `backend/app/ml/model_registry.py`:
-```python
-def load(
-    self,
-    model_name: str = 'paraphrase-multilingual-MiniLM-L12-v2',  # Change here
-    device: str = 'cpu',
-    cache_dir: Optional[str] = None
-) -> None:
-```
+Фронтенд отображает оценки как цветные значки:
+- **Зелёный** (≥ 70%) — высокая релевантность
+- **Оранжевый** (50–69%) — средняя релевантность
+- **Серый** (< 50%) — низкая релевантность
 
-#### paraphrase-multilingual-mpnet-base-v2 (Previous Model)
-- **Dimensions**: 768
-- **Size**: ~1.5GB
-- **Languages**: 50+ including Russian
-- **Speed**: Slowest but highest quality
-- **Use Case**: When quality > speed
+## Альтернативные модели
 
-### CPU-Only PyTorch
+### paraphrase-multilingual-MiniLM-L12-v2 (быстрее, меньше)
 
-The `requirements.txt` is configured to install PyTorch CPU version:
+| Параметр | Значение |
+|----------|----------|
+| Размерность | 384 |
+| Размер | ~420 МБ |
+| Языки | 50+, включая русский |
+| Скорость | ~2–3x быстрее текущей |
+| Качество | Чуть ниже |
+
+### all-MiniLM-L6-v2 (только английский, очень быстрая)
+
+| Параметр | Значение |
+|----------|----------|
+| Размерность | 384 |
+| Размер | ~90 МБ |
+| Языки | Преимущественно английский |
+| Скорость | ~5x быстрее текущей |
+
+## Сравнение моделей
+
+| Модель | Измерения | Размер | Скорость | Качество | Языки |
+|--------|-----------|--------|----------|----------|-------|
+| **paraphrase-multilingual-mpnet-base-v2** | **768** | **1,5 ГБ** | Медленная | Отличное | **50+** |
+| paraphrase-multilingual-MiniLM-L12-v2 | 384 | 420 МБ | Средняя | Хорошее | 50+ |
+| all-MiniLM-L6-v2 | 384 | 90 МБ | Быстрая | Хорошее | EN |
+
+## Смена модели
+
+1. Отредактировать `app/api/routes/documents.py`:
+   ```python
+   embedding_service = EmbeddingService(
+       model_name='paraphrase-multilingual-MiniLM-L12-v2',
+       device='cpu',
+   )
+   ```
+2. Очистить кэш: `docker volume rm <project>_model-cache`
+3. Пересобрать: `docker compose build --no-cache backend`
+4. Перезапустить: `docker compose up -d`
+
+## PyTorch CPU-версия
+
+В `requirements.txt` явно указана CPU-версия PyTorch:
 
 ```txt
-torch==2.1.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
-This ensures:
-- No CUDA dependencies
-- Smaller Docker images (~500MB vs ~2GB)
-- Faster build times
-- Works on all systems
+Обеспечивает отсутствие CUDA-зависимостей и совместимость с любым оборудованием.
 
-### Similarity Scores
+## Решение проблем
 
-The model outputs cosine similarity scores:
-- **Range**: 0.0 to 1.0
-- **Interpretation**:
-  - `0.9-1.0`: Nearly identical meaning
-  - `0.7-0.9`: High similarity
-  - `0.5-0.7`: Moderate similarity
-  - `0.3-0.5`: Low similarity
-  - `0.0-0.3`: Little to no similarity
+**Модель загружается долго при первом старте:**
+Нормально — загрузка ~1,5 ГБ. После кэширования в томе Docker повторная загрузка не нужна.
 
-### Frontend Display
+**Модель скачивается заново при каждом запуске:**
+Убедитесь, что том `./model-cache` примонтирован в docker-compose.yml.
 
-Similarity scores are color-coded:
-- **Green** (≥70%): High relevance
-- **Orange** (50-69%): Moderate relevance
-- **Gray** (<50%): Low relevance
+**Плохие результаты для коротких запросов:**
+Используйте фразы, а не отдельные слова. Модель оптимизирована для предложений.
 
-### Optimization Tips
-
-1. **Batch Processing**: Process multiple documents at once
-2. **Caching**: Embeddings are stored and reused
-3. **Text Preprocessing**: Reduces noise and improves quality
-4. **Truncation**: Long texts are truncated to 512 tokens
-
-### Memory Usage
-
-- **Model in Memory**: ~100MB
-- **Per Document Embedding**: 384 floats × 4 bytes = 1.5KB
-- **10,000 documents**: ~15MB of embeddings
-
-### Benchmark Results
-
-Tested on MacBook Pro (M1, 8GB RAM):
-
-| Operation | Time | Throughput |
-|-----------|------|------------|
-| Model Loading | 1-2s | - |
-| Single Text | ~8ms | 125 texts/sec |
-| Batch (32 texts) | ~150ms | 213 texts/sec |
-| Search (1000 docs) | ~20ms | - |
-| Upload + Embed | ~200ms | - |
-
-### Model Comparison
-
-| Model | Dims | Size | Speed | Quality | Languages |
-|-------|------|------|-------|---------|-----------|
-| all-MiniLM-L6-v2 | 384 | 90MB | ⚡️⚡️⚡️ | ⭐️⭐️⭐️ | EN |
-| multilingual-MiniLM-L12-v2 | 384 | 420MB | ⚡️⚡️ | ⭐️⭐️⭐️ | 50+ |
-| multilingual-mpnet-base-v2 | 768 | 1.5GB | ⚡️ | ⭐️⭐️⭐️⭐️ | 50+ |
-
-### Troubleshooting
-
-**Issue**: Model downloads every time
-- **Solution**: Volumes are configured to cache models in Docker
-
-**Issue**: Slow search performance
-- **Solution**: Ensure embeddings are pre-computed on upload
-
-**Issue**: Poor multilingual results
-- **Solution**: Switch to multilingual model (see alternatives above)
-
-**Issue**: Out of memory
-- **Solution**: Current model uses minimal memory; check system resources
-
-### Production Considerations
-
-For production deployments:
-
-1. **Pre-compute embeddings**: Done automatically on upload
-2. **Use batch processing**: Already implemented in service
-3. **Monitor memory**: Current model is memory-efficient
-4. **Cache aggressively**: Embeddings cached in database
-5. **Consider GPU**: For very high throughput (optional)
-
-### Updating the Model
-
-To change models:
-
-1. Edit model name in service initialization
-2. Clear model cache: `docker volume rm <project>_model-cache`
-3. Rebuild: `docker compose build --no-cache backend`
-4. Restart: `docker compose up -d`
-
-New model will download on first startup.
+**Недостаточно RAM:**
+Модель требует ~1,5 ГБ. При нехватке памяти переключитесь на `paraphrase-multilingual-MiniLM-L12-v2` (~420 МБ).

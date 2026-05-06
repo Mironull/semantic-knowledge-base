@@ -1,190 +1,146 @@
-# Quick Start Guide
+# Быстрый старт
 
-Get the Knowledge Base application running in 5 minutes.
+Запустите приложение за 5 минут.
 
-## Prerequisites
+## Требования
 
-- Docker and Docker Compose installed
-- 5GB free disk space
-- Internet connection (first time only)
+- Docker и Docker Compose
+- 5 ГБ свободного места на диске
+- Интернет (только при первом запуске — для загрузки модели)
 
-## Start the Application
+## Запуск
 
 ```bash
-# 1. Clone and navigate
+# 1. Перейти в директорию проекта
 cd knoweledge-base
 
-# 2. Start services
+# 2. Запустить сервисы
 docker compose up -d
 
-# 3. Wait for startup (30-60 seconds)
+# 3. Дождаться готовности (30–60 секунд)
 docker compose logs -f backend
-# Wait until you see: "Loaded embedding model: all-MiniLM-L6-v2"
-# Press Ctrl+C to exit logs
+# Ждать строки: "Loaded embedding model: paraphrase-multilingual-mpnet-base-v2"
+# Нажать Ctrl+C для выхода из просмотра логов
 ```
 
-## Access the Application
+## Адреса
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+| Сервис | URL |
+|--------|-----|
+| Фронтенд | http://localhost:3000 |
+| Бэкенд API | http://localhost:8000 |
+| Swagger UI | http://localhost:8000/docs |
 
-## Try It Out
+## Первые шаги
 
-### 1. Upload a Document
+### 1. Загрузить документ
 
-1. Open http://localhost:3000
-2. Expand "Управление базой знаний" (Knowledge Base Management)
-3. Click "Загрузить документ" (Upload Document)
-4. Select a PDF, DOCX, or TXT file
-5. Click "Загрузить" (Upload)
+1. Открыть http://localhost:3000
+2. Развернуть раздел **«Управление базой знаний»**
+3. Нажать **«Загрузить документ»**
+4. Выбрать файл (PDF, DOCX, TXT, JSON, XML)
+5. Нажать **«Загрузить»**
 
-### 2. Search with Semantic Search
+### 2. Поиск
 
-Enter a query in the search box:
-- "machine learning algorithms"
-- "python programming"
-- "data analysis"
+Введите запрос в строку поиска. Система вернёт документы с оценкой похожести:
 
-Results show **similarity scores** as color-coded badges:
-- 🟢 Green (≥70%): High relevance
-- 🟠 Orange (50-69%): Moderate relevance
-- ⚫ Gray (<50%): Low relevance
+| Значок | Диапазон | Интерпретация |
+|--------|----------|---------------|
+| Зелёный | ≥ 70% | Высокая релевантность |
+| Оранжевый | 50–69% | Средняя релевантность |
+| Серый | < 50% | Низкая релевантность |
 
-### 3. View Documents
+### 3. Просмотр и скачивание
 
-1. Expand "Все документы" (All Documents)
-2. Click "👁 Просмотр" (Preview) to view content
-3. Click "⬇ Скачать" (Download) to download
+В разделе **«Все документы»** нажмите:
+- **«Просмотр»** — предпросмотр текста в браузере
+- **«Скачать»** — загрузить файл
 
-## Stop the Application
-
-```bash
-docker compose down
-```
-
-Your data is saved in Docker volumes and will be available next time.
-
-## Commands Cheat Sheet
+## Команды
 
 ```bash
-# Start
+# Запуск
 docker compose up -d
 
-# Stop
+# Остановка
 docker compose down
 
-# View logs
+# Логи
 docker compose logs -f
 
-# Restart
+# Перезапуск
 docker compose restart
 
-# Status
+# Статус контейнеров
 docker compose ps
 
-# Using Make (if installed)
-make up        # Start
-make down      # Stop
-make logs      # View logs
-make restart   # Restart
+# Через Make
+make up      # Запуск
+make down    # Остановка
+make logs    # Логи
+make restart # Перезапуск
 ```
 
-## Troubleshooting
+## Устранение неполадок
 
-### Backend won't start
+**Бэкенд не запускается:**
 ```bash
 docker compose logs backend
-# Check for errors, usually port conflicts or permissions
+# Обычно: занятый порт 8000 или недостаточно прав
 ```
 
-### Frontend can't connect
+**Фронтенд не подключается:**
 ```bash
 curl http://localhost:8000/health
-# Should return: {"status": "healthy"}
+# Ожидается: {"status": "healthy"}
 ```
 
-### Need to rebuild
+**Пересборка с нуля:**
 ```bash
 docker compose down
 docker compose build --no-cache
 docker compose up -d
 ```
 
-## What's Running?
+## Что запущено
 
-- **Backend**: FastAPI server with ML-powered search
-- **Frontend**: React app served by Nginx
-- **Databases**: SQLite (documents + embeddings)
-- **ML Model**: all-MiniLM-L6-v2 (90MB, CPU-only)
+| Компонент | Описание |
+|-----------|----------|
+| Бэкенд | FastAPI на порту 8000, семантический поиск |
+| Фронтенд | React-приложение, раздаётся Nginx на порту 3000 |
+| docstore.db | SQLite — документы (метаданные + бинарные данные) |
+| embeddings.db | SQLite — чанки с векторными эмбеддингами |
+| ML-модель | paraphrase-multilingual-mpnet-base-v2, 768 измерений, ~1,5 ГБ, только CPU |
 
-## Key Features
-
-✅ **Semantic Search**: Understands meaning, not just keywords
-✅ **Similarity Scores**: See how relevant each result is
-✅ **Multi-format**: PDF, DOCX, TXT, JSON, XML
-✅ **Preview**: View document content in-browser
-✅ **Lightweight**: 90MB model, fast on CPU
-✅ **No GPU Required**: Runs on any system
-
-## Next Steps
-
-- See [README.md](./README.md) for full documentation
-- See [DOCKER_DEPLOYMENT.md](./DOCKER_DEPLOYMENT.md) for advanced usage
-- See [ML_MODEL_INFO.md](./backend/ML_MODEL_INFO.md) for ML details
-
-## Getting Help
+## Примеры API-запросов
 
 ```bash
-# Check logs
-docker compose logs -f backend
-docker compose logs -f frontend
+# Загрузить документ
+curl -X POST http://localhost:8000/upload -F "file=@document.pdf"
 
-# Check container status
-docker compose ps
-
-# Test backend
-curl http://localhost:8000/health
-
-# Test frontend
-curl http://localhost:3000/health
-```
-
-## Example API Calls
-
-### Upload Document
-```bash
-curl -X POST http://localhost:8000/upload \
-  -F "file=@document.pdf"
-```
-
-### Search Documents
-```bash
+# Семантический поиск
 curl "http://localhost:8000/search?name=machine+learning"
-```
+curl "http://localhost:8000/search?name=машинное+обучение"
 
-### List All Documents
-```bash
+# Список всех документов
 curl http://localhost:8000/documents
+
+# Удалить документ
+curl -X DELETE http://localhost:8000/documents/{doc_id}
 ```
 
-## Performance
+## Производительность
 
-- **Model Load**: 1-2 seconds
-- **Document Upload**: ~200ms (includes embedding)
-- **Search**: ~20ms (1000 documents)
-- **Single Embedding**: ~8ms
+| Операция | Время |
+|----------|-------|
+| Загрузка модели | 1–2 с |
+| Загрузка документа с эмбеддингом | ~200 мс |
+| Поиск (1000 документов) | ~20 мс |
+| Один эмбеддинг | ~8 мс |
 
-## Memory Usage
-
-- Backend: ~300MB
-- Frontend: ~50MB
-- Total: ~400MB RAM
-
-Perfect for laptops and small servers!
+Бэкенд потребляет ~300 МБ RAM (включая модель ~100 МБ). Подходит для ноутбуков и небольших серверов.
 
 ---
 
-Happy searching! 🚀
-
-For detailed documentation, see [README.md](./README.md)
+Подробная документация: [README.md](./README.md)
