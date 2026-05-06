@@ -10,8 +10,9 @@ function App() {
 
   // --- НОВЫЕ СОСТОЯНИЯ ---
   const [searchHistory, setSearchHistory] = useState([]); // История поисков
-  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [uploadProgress, setUploadProgress] = useState({});
   const [error, setError] = useState('');
   const [allDocuments, setAllDocuments] = useState([]);
   const [isDocumentsOpen, setIsDocumentsOpen] = useState(false);
@@ -105,39 +106,39 @@ function App() {
     }
   };
 
-  // Загрузка документа
+  // Загрузка документов
   const handleFileUpload = async () => {
-    if (!uploadFile) return;
+    if (uploadFiles.length === 0) return;
 
     setUploadStatus('Загрузка...');
     setError('');
 
-    try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
+    const initial = {};
+    uploadFiles.forEach(f => { initial[f.name] = 'pending'; });
+    setUploadProgress(initial);
 
-      const response = await fetch(`${API_BASE_URL}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Ошибка загрузки');
+    let successCount = 0;
+    for (const file of uploadFiles) {
+      setUploadProgress(prev => ({ ...prev, [file.name]: 'uploading' }));
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_BASE_URL}/upload`, { method: 'POST', body: formData });
+        if (!response.ok) throw new Error();
+        setUploadProgress(prev => ({ ...prev, [file.name]: 'done' }));
+        successCount++;
+      } catch {
+        setUploadProgress(prev => ({ ...prev, [file.name]: 'error' }));
       }
-
-      const data = await response.json();
-      setUploadStatus(`Успешно загружено: ${data.filename}`);
-      setUploadFile(null);
-
-      // Обновляем список документов
-      loadAllDocuments();
-
-      // Очищаем статус через 3 секунды
-      setTimeout(() => setUploadStatus(''), 3000);
-    } catch (err) {
-      setError('Не удалось загрузить файл. Проверьте подключение к backend.');
-      setUploadStatus('');
     }
+
+    loadAllDocuments();
+    setUploadStatus(`Загружено ${successCount} из ${uploadFiles.length}`);
+    setTimeout(() => {
+      setUploadFiles([]);
+      setUploadProgress({});
+      setUploadStatus('');
+    }, 3000);
   };
 
   // Загрузка всех документов
@@ -459,13 +460,30 @@ function App() {
           {isAdminOpen && (
             <div style={{ padding: '24px', borderTop: `1px solid ${theme.cardBorder}`, marginTop: '8px' }}>
               <div style={{ border: isDarkMode ? '2px dashed #475569' : '2px dashed #cbd5e1', borderRadius: '20px', padding: '30px', textAlign: 'center', backgroundColor: isDarkMode ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.4)' }}>
-                <p style={{ color: theme.textSub, fontSize: '14px', marginBottom: '16px' }}>Загрузите PDF, Word или текстовый документ</p>
+                <p style={{ color: theme.textSub, fontSize: '14px', marginBottom: '16px' }}>Загрузите PDF, Word или текстовые документы</p>
                 <input
                   type="file"
-                  onChange={(e) => setUploadFile(e.target.files[0])}
+                  multiple
+                  onChange={(e) => { setUploadFiles(Array.from(e.target.files)); setUploadProgress({}); setUploadStatus(''); }}
                   style={{ fontSize: '14px', color: theme.textSub, marginBottom: '16px' }}
                 />
-                {uploadFile && (
+                {uploadFiles.length > 0 && (
+                  <div style={{ textAlign: 'left', marginTop: '12px', marginBottom: '12px' }}>
+                    {uploadFiles.map(f => {
+                      const st = uploadProgress[f.name];
+                      const icon = st === 'done' ? '✓' : st === 'error' ? '✗' : st === 'uploading' ? '…' : '·';
+                      const color = st === 'done' ? '#10b981' : st === 'error' ? '#ef4444' : theme.textSub;
+                      return (
+                        <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                          <span style={{ fontWeight: '700', color, minWidth: '14px', textAlign: 'center' }}>{icon}</span>
+                          <span style={{ fontSize: '13px', color: theme.textMain, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                          <span style={{ fontSize: '12px', color: theme.textSub, flexShrink: 0 }}>{formatSize(f.size)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {uploadFiles.length > 0 && !uploadStatus && (
                   <button
                     onClick={handleFileUpload}
                     style={{
@@ -474,7 +492,7 @@ function App() {
                       fontWeight: '600', cursor: 'pointer', marginTop: '8px'
                     }}
                   >
-                    Загрузить
+                    Загрузить {uploadFiles.length > 1 ? `(${uploadFiles.length} файла)` : ''}
                   </button>
                 )}
                 {uploadStatus && (
