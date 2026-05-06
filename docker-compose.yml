@@ -16,9 +16,9 @@ services:
       # - CORS_ORIGINS=http://localhost:3000,http://localhost:80,http://frontend
     volumes:
       # Persist databases
-      - backend-data:/app/data
+      - ./data:/app/data
       # Cache for ML models
-      - model-cache:/root/.cache/embedding_models
+      - ./model-cache:/root/.cache/embedding_models
       # Development: mount source code (comment out for production)
       # - ./backend:/app
     networks:
@@ -52,14 +52,6 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
-
-volumes:
-  # Persistent volume for backend data
-  backend-data:
-    driver: local
-  # Cache for ML models (sentence-transformers)
-  model-cache:
-    driver: local
 
 networks:
   app-network:
