@@ -21,8 +21,12 @@ services:
       #   all-MiniLM-L6-v2                       (90 МБ, только EN, самая быстрая)
       - ML_MODEL_NAME=paraphrase-multilingual-mpnet-base-v2
       - ML_DEVICE=cpu
-      - ML_CHUNK_SIZE=400
+      - ML_CHUNK_SIZE=800
+      - ML_CHUNK_OVERLAP=1
       - ML_TOP_K=3
+      - ML_RERANKER_ENABLED=true
+      - ML_RERANKER_MODEL_NAME=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+      - ML_RERANK_CANDIDATES=20
     volumes:
       # Persist databases
       - ./data:/app/data

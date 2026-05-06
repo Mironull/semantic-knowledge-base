@@ -207,17 +207,25 @@ class EmbeddingService:
 
         return results
 
-    def split_into_chunks(self, text: str, chunk_size: int = 400) -> List[str]:
+    def split_into_chunks(
+        self,
+        text: str,
+        chunk_size: int = 800,
+        chunk_overlap: int = 1,
+    ) -> List[str]:
         """
-        Split document text into sentence-aware chunks.
+        Split document text into sentence-aware chunks with overlap.
 
         Splits on sentence boundaries (. ! ? or paragraph breaks) so each chunk
-        stays within ~chunk_size characters. Short fragments are merged into the
-        previous chunk rather than emitted standalone.
+        stays within ~chunk_size characters. The last `chunk_overlap` sentences
+        of every chunk are carried over to the start of the next one so that
+        context at boundaries is not lost.
 
         Args:
             text: Raw document text.
             chunk_size: Target maximum characters per chunk.
+            chunk_overlap: Number of sentences to repeat at the start of the
+                           next chunk (0 = no overlap).
 
         Returns:
             List of non-empty chunk strings.
@@ -228,7 +236,6 @@ class EmbeddingService:
         text = re.sub(r'[ \t]+', ' ', text.strip())
         text = re.sub(r'\n{3,}', '\n\n', text)
 
-        # Split into sentence-level units on punctuation or paragraph breaks
         units = re.split(r'(?<=[.!?])\s+|\n\n+', text)
         units = [u.strip() for u in units if u.strip() and len(u.strip()) >= 10]
 
@@ -247,8 +254,11 @@ class EmbeddingService:
                 chunk_text = ' '.join(current_parts).strip()
                 if len(chunk_text) >= 30:
                     chunks.append(chunk_text)
-                current_parts = [unit]
-                current_len = len(unit) + 1
+
+                # перенести последние chunk_overlap предложений в следующий чанк
+                overlap_parts = current_parts[-chunk_overlap:] if chunk_overlap > 0 else []
+                current_parts = overlap_parts + [unit]
+                current_len = sum(len(p) + 1 for p in current_parts)
 
         if current_parts:
             chunk_text = ' '.join(current_parts).strip()

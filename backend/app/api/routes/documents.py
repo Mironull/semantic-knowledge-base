@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.core.config import settings
 from app.models import DocumentMetadata, DocumentMetadataWithSize, DocumentSearchResult
 from app.services import DatabaseManager, DocumentParserService
-from app.ml import EmbeddingService, EmbeddingDatabase
+from app.ml import EmbeddingService, EmbeddingDatabase, cross_encoder_reranker
 
 
 # Create router
@@ -25,6 +25,12 @@ embedding_service = EmbeddingService(
     device=settings.ML_DEVICE,
 )
 embedding_db = EmbeddingDatabase(db_file=settings.EMBEDDINGS_DB_FILE)
+
+if settings.ML_RERANKER_ENABLED:
+    cross_encoder_reranker.load(
+        model_name=settings.ML_RERANKER_MODEL_NAME,
+        device=settings.ML_DEVICE,
+    )
 
 
 @router.post(
@@ -93,7 +99,11 @@ async def upload_document(
             text_content = parsed_data.get("content", "")
 
             if text_content and isinstance(text_content, str):
-                chunks = embedding_service.split_into_chunks(text_content, chunk_size=settings.ML_CHUNK_SIZE)
+                chunks = embedding_service.split_into_chunks(
+                    text_content,
+                    chunk_size=settings.ML_CHUNK_SIZE,
+                    chunk_overlap=settings.ML_CHUNK_OVERLAP,
+                )
                 if chunks:
                     embeddings = embedding_service.generate_embeddings_batch(chunks)
                     if embeddings is not None:
@@ -213,8 +223,8 @@ async def search_documents(
 
                     # Keep best-scoring chunk per document
                     best_per_doc: dict = {}
-                    for i, (doc_id, chunk_idx, chunk_text, score) in enumerate(
-                        zip(doc_ids, chunk_indices, chunk_texts, similarities.tolist())
+                    for doc_id, chunk_idx, chunk_text, score in zip(
+                        doc_ids, chunk_indices, chunk_texts, similarities.tolist()
                     ):
                         if doc_id not in best_per_doc or score > best_per_doc[doc_id]["score"]:
                             best_per_doc[doc_id] = {
@@ -223,10 +233,30 @@ async def search_documents(
                                 "chunk_index": chunk_idx,
                             }
 
-                    ranked = sorted(best_per_doc.items(), key=lambda x: x[1]["score"], reverse=True)[:settings.ML_TOP_K]
+                    # Stage 1: bi-encoder — take ML_RERANK_CANDIDATES for reranker
+                    candidate_count = (
+                        settings.ML_RERANK_CANDIDATES
+                        if settings.ML_RERANKER_ENABLED and cross_encoder_reranker.is_available()
+                        else settings.ML_TOP_K
+                    )
+                    candidates = sorted(
+                        best_per_doc.items(),
+                        key=lambda x: x[1]["score"],
+                        reverse=True,
+                    )[:candidate_count]
+
+                    # Stage 2: cross-encoder rerank (if enabled)
+                    if settings.ML_RERANKER_ENABLED and cross_encoder_reranker.is_available():
+                        candidates = cross_encoder_reranker.rerank(
+                            query=name,
+                            candidates=candidates,
+                            top_k=settings.ML_TOP_K,
+                        )
+                    else:
+                        candidates = candidates[:settings.ML_TOP_K]
 
                     results = []
-                    for doc_id, best in ranked:
+                    for doc_id, best in candidates:
                         metadata = db_manager.get_document_metadata(doc_id)
                         if metadata:
                             results.append(DocumentSearchResult(
@@ -234,12 +264,13 @@ async def search_documents(
                                 filename=metadata.filename,
                                 content_type=metadata.content_type,
                                 upload_date=metadata.upload_date,
-                                similarity_score=round(best["score"], 4),
+                                similarity_score=best["score"],
                                 chunk_text=best["chunk_text"],
                                 chunk_index=best["chunk_index"],
                             ))
 
-                    print(f"Chunk-level semantic search returned {len(results)} results")
+                    stage = "bi-encoder + cross-encoder rerank" if cross_encoder_reranker.is_available() else "bi-encoder"
+                    print(f"Search ({stage}) returned {len(results)} results")
                     return results
         except Exception as e:
             print(f"Warning: Semantic search failed, falling back to filename search: {e}")
