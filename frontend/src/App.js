@@ -21,6 +21,7 @@ function App() {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [sortBy, setSortBy] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
+  const [reembedAllStatus, setReembedAllStatus] = useState('');
 
   const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 
@@ -193,6 +194,23 @@ function App() {
   const closePreview = () => {
     setPreviewDoc(null);
     setPreviewContent('');
+  };
+
+  // Пересоздать эмбеддинги для всех документов
+  const handleReembedAll = async () => {
+    setReembedAllStatus('loading');
+    try {
+      const response = await fetch(`${API_BASE_URL}/reembed-all`, { method: 'POST' });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Ошибка');
+      }
+      const data = await response.json();
+      setReembedAllStatus(`Готово: ${data.ok} из ${data.total}`);
+    } catch (err) {
+      setReembedAllStatus('Ошибка пересоздания');
+    }
+    setTimeout(() => setReembedAllStatus(''), 5000);
   };
 
   // Загружаем все документы при открытии панели
@@ -499,6 +517,21 @@ function App() {
                   <p style={{ color: theme.textPink, fontSize: '14px', marginTop: '12px', fontWeight: '500' }}>
                     {uploadStatus}
                   </p>
+                )}
+              </div>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.cardBorder}`, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  onClick={handleReembedAll}
+                  disabled={reembedAllStatus === 'loading'}
+                  style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '10px 20px', borderRadius: '12px', border: `1px solid ${theme.tagBorder}`, cursor: reembedAllStatus === 'loading' ? 'wait' : 'pointer', fontWeight: '600', fontSize: '14px' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                  {reembedAllStatus === 'loading' ? 'Пересоздание...' : 'Пересоздать все эмбеддинги'}
+                </button>
+                {reembedAllStatus && reembedAllStatus !== 'loading' && (
+                  <span style={{ fontSize: '13px', color: reembedAllStatus.startsWith('Готово') ? '#10b981' : '#ef4444', fontWeight: '600' }}>
+                    {reembedAllStatus}
+                  </span>
                 )}
               </div>
             </div>

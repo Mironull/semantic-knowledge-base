@@ -344,6 +344,63 @@ async def delete_document(doc_id: str):
     return {"message": "Document deleted successfully"}
 
 
+def _reembed_document(doc_id: str, filename: str, content_type: str, data: bytes) -> dict:
+    """Parse a document and (re)generate its embeddings. Returns a status dict."""
+    if not embedding_service.is_available():
+        return {"doc_id": doc_id, "status": "skipped", "chunks": 0, "reason": "ML service unavailable"}
+
+    parsed = parser_service.parse_document(data=data, filename=filename, content_type=content_type)
+    text_content = parsed.get("content", "")
+
+    if not text_content or not isinstance(text_content, str):
+        return {"doc_id": doc_id, "status": "skipped", "chunks": 0, "reason": "No text content extracted"}
+
+    chunks = embedding_service.split_into_chunks(
+        text_content,
+        chunk_size=settings.ML_CHUNK_SIZE,
+        chunk_overlap=settings.ML_CHUNK_OVERLAP,
+    )
+    if not chunks:
+        return {"doc_id": doc_id, "status": "skipped", "chunks": 0, "reason": "No chunks produced"}
+
+    embeddings = embedding_service.generate_embeddings_batch(chunks)
+    if embeddings is None:
+        return {"doc_id": doc_id, "status": "error", "chunks": 0, "reason": "Embedding generation failed"}
+
+    embedding_db.store_chunks(doc_id, chunks, embeddings)
+    return {"doc_id": doc_id, "status": "ok", "chunks": len(chunks)}
+
+
+
+@router.post(
+    "/reembed-all",
+    summary="Recreate All Embeddings",
+    description="Recreate embeddings for every document in the database.",
+    responses={
+        200: {"description": "Bulk reembed results"},
+        503: {"description": "ML service unavailable"},
+    }
+)
+async def reembed_all_documents():
+    """Recreate embeddings for all stored documents."""
+    if not embedding_service.is_available():
+        raise HTTPException(status_code=503, detail="ML service unavailable")
+
+    documents = db_manager.get_all_documents()
+    results = []
+    for doc in documents:
+        raw = db_manager.get_document_data(doc.id)
+        if raw is None:
+            results.append({"doc_id": doc.id, "status": "error", "chunks": 0, "reason": "Data not found"})
+            continue
+        filename, content_type, data = raw
+        results.append(_reembed_document(doc.id, filename, content_type, data))
+
+    total = len(results)
+    ok = sum(1 for r in results if r["status"] == "ok")
+    return {"total": total, "ok": ok, "results": results}
+
+
 @router.get(
     "/preview/{doc_id}",
     summary="Preview Document",
