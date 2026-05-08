@@ -19,12 +19,12 @@ services:
       #   paraphrase-multilingual-mpnet-base-v2  (по умолчанию, 1.5 ГБ, 50+ языков)
       #   paraphrase-multilingual-MiniLM-L12-v2  (420 МБ, 50+ языков, быстрее)
       #   all-MiniLM-L6-v2                       (90 МБ, только EN, самая быстрая)
-      - ML_MODEL_NAME=paraphrase-multilingual-mpnet-base-v2
+      - ML_MODEL_NAME=paraphrase-multilingual-MiniLM-L12-v2
       - ML_DEVICE=cpu
-      - ML_CHUNK_SIZE=800
+      - ML_CHUNK_SIZE=300
       - ML_CHUNK_OVERLAP=1
       - ML_TOP_K=3
-      - ML_RERANKER_ENABLED=true
+      - ML_RERANKER_ENABLED=false
       - ML_RERANKER_MODEL_NAME=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
       - ML_RERANK_CANDIDATES=20
     volumes:
