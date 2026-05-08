@@ -87,7 +87,7 @@ class TextPreprocessor:
             text = text.lower()
 
         text = collapse_whitespace(text)
-        text = truncate_text(text, self._max_length)
+        # text = truncate_text(text, self._max_length)
 
         return text
 
