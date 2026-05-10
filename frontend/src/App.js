@@ -162,21 +162,39 @@ function App() {
 
     try {
       const response = await fetch(`${API_BASE_URL}/preview/${docId}`);
-      if (!response.ok) throw new Error('Ошибка предпросмотра');
-      const data = await response.json();
+      if (!response.ok) throw new Error('Ошибка');
 
-      if (data.type === 'text') {
-        setPreviewContent(data.content);
+      const lowerName = docName.toLowerCase();
+
+      if (lowerName.endsWith('.docx')) {
+        const blob = await response.blob();
+        // Важно: мы НЕ создаем здесь URL.createObjectURL для docx, 
+        // чтобы браузер не пытался его "открыть" как ссылку.
+
+        // Даем модальному окну время открыться
+        setTimeout(async () => {
+          const container = document.getElementById("docx-container");
+          if (container) {
+            container.innerHTML = "";
+            // Подгружаем библиотеку
+            const docx = await import('docx-preview');
+            await docx.renderAsync(blob, container);
+          }
+        }, 500); // Увеличили задержку для надежности
+      } else if (lowerName.endsWith('.pdf') || lowerName.endsWith('.html')) {
+        const blob = await response.blob();
+        setPreviewContent(URL.createObjectURL(blob));
       } else {
-        setPreviewContent(data.content || 'Предпросмотр недоступен для данного типа файла');
+        const data = await response.json();
+        setPreviewContent(data.content || 'Пусто');
       }
     } catch (err) {
-      setPreviewContent('Не удалось загрузить предпросмотр');
+      console.error(err);
+      setPreviewContent('Ошибка загрузки');
     } finally {
       setIsPreviewLoading(false);
     }
   };
-
   // Удаление документа
   const handleDelete = async (docId, docName) => {
     if (!window.confirm(`Удалить «${docName}»?`)) return;
@@ -390,7 +408,7 @@ function App() {
           <button onClick={toggleDocuments} style={{ ...baseStyle, width: '100%', padding: '12px 0', border: 'none', background: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontWeight: '500', color: theme.textMain }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div style={{ paddingLeft: '18px', display: 'flex', alignItems: 'center', opacity: 0.5 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" /></svg>
               </div>
               <span style={{ fontSize: '16px', opacity: 0.7 }}>Все документы {allDocuments.length > 0 && `(${allDocuments.length})`}</span>
             </div>
@@ -420,45 +438,45 @@ function App() {
                 </div>
               )}
               <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              {allDocuments.length === 0 ? (
-                <p style={{ color: theme.textSub, textAlign: 'center', padding: '20px' }}>Документы отсутствуют</p>
-              ) : (
-                sortedDocuments.map((doc) => (
-                  <div key={doc.id} style={{ ...baseStyle, padding: '12px', marginBottom: '8px', backgroundColor: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)', borderRadius: '12px', border: `1px solid ${theme.cardBorder}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <h4 style={{ fontSize: '15px', fontWeight: '600', color: theme.textMain, margin: 0 }}>{doc.filename}</h4>
-                      <span style={{ fontSize: '12px', color: theme.textSub }}>{formatSize(doc.size)}</span>
+                {allDocuments.length === 0 ? (
+                  <p style={{ color: theme.textSub, textAlign: 'center', padding: '20px' }}>Документы отсутствуют</p>
+                ) : (
+                  sortedDocuments.map((doc) => (
+                    <div key={doc.id} style={{ ...baseStyle, padding: '12px', marginBottom: '8px', backgroundColor: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)', borderRadius: '12px', border: `1px solid ${theme.cardBorder}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <h4 style={{ fontSize: '15px', fontWeight: '600', color: theme.textMain, margin: 0 }}>{doc.filename}</h4>
+                        <span style={{ fontSize: '12px', color: theme.textSub }}>{formatSize(doc.size)}</span>
+                      </div>
+                      <p style={{ fontSize: '13px', color: theme.textSub, margin: '4px 0' }}>
+                        {doc.content_type} • {new Date(doc.upload_date).toLocaleDateString('ru-RU')}
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                          onClick={() => handlePreview(doc.id, doc.filename)}
+                          style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, cursor: 'pointer', fontWeight: '600' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+                          Просмотр
+                        </button>
+                        <a
+                          href={`${API_BASE_URL}/download/${doc.id}`}
+                          download
+                          style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, textDecoration: 'none', fontWeight: '600' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          Скачать
+                        </a>
+                        <button
+                          onClick={() => handleDelete(doc.id, doc.filename)}
+                          style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontWeight: '600' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                          Удалить
+                        </button>
+                      </div>
                     </div>
-                    <p style={{ fontSize: '13px', color: theme.textSub, margin: '4px 0' }}>
-                      {doc.content_type} • {new Date(doc.upload_date).toLocaleDateString('ru-RU')}
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                      <button
-                        onClick={() => handlePreview(doc.id, doc.filename)}
-                        style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, cursor: 'pointer', fontWeight: '600' }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        Просмотр
-                      </button>
-                      <a
-                        href={`${API_BASE_URL}/download/${doc.id}`}
-                        download
-                        style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '6px 12px', borderRadius: '8px', border: `1px solid ${theme.tagBorder}`, textDecoration: 'none', fontWeight: '600' }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Скачать
-                      </a>
-                      <button
-                        onClick={() => handleDelete(doc.id, doc.filename)}
-                        style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontWeight: '600' }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                        Удалить
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -525,7 +543,7 @@ function App() {
                   disabled={reembedAllStatus === 'loading'}
                   style={{ ...baseStyle, display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: theme.tagBg, color: theme.tagText, padding: '10px 20px', borderRadius: '12px', border: `1px solid ${theme.tagBorder}`, cursor: reembedAllStatus === 'loading' ? 'wait' : 'pointer', fontWeight: '600', fontSize: '14px' }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>
                   {reembedAllStatus === 'loading' ? 'Пересоздание...' : 'Пересоздать все эмбеддинги'}
                 </button>
                 {reembedAllStatus && reembedAllStatus !== 'loading' && (
@@ -569,7 +587,7 @@ function App() {
                         gap: '6px'
                       }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
                         </svg>
                         {(item.similarity * 100).toFixed(0)}%
                       </div>
@@ -603,8 +621,8 @@ function App() {
                         }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                          <circle cx="12" cy="12" r="3"/>
+                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                          <circle cx="12" cy="12" r="3" />
                         </svg>
                         Просмотр
                       </button>
@@ -669,21 +687,30 @@ function App() {
             </div>
 
             {/* Контент предпросмотра */}
-            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+            {/* Контент предпросмотра */}
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1, backgroundColor: '#fff' }}>
               {isPreviewLoading ? (
-                <div style={{ textAlign: 'center', padding: '40px' }}>
-                  <div style={{ animation: 'skeletonPulse 1.5s infinite ease-in-out' }}>
-                    <p style={{ color: theme.textSub }}>Загрузка...</p>
-                  </div>
-                </div>
+                <div style={{ textAlign: 'center', padding: '40px' }}>Загрузка...</div>
               ) : (
-                <pre style={{
-                  whiteSpace: 'pre-wrap', wordWrap: 'break-word',
-                  fontFamily: '"Courier New", monospace', fontSize: '14px',
-                  color: theme.textMain, margin: 0, lineHeight: '1.6'
-                }}>
-                  {previewContent}
-                </pre>
+                <>
+                  {/* 1. Если это PDF или HTML (ссылка начинается на blob:) */}
+                  {typeof previewContent === 'string' && previewContent.startsWith('blob:') ? (
+                    <iframe
+                      src={previewContent}
+                      style={{ width: '100%', height: '75vh', border: 'none' }}
+                      title="Document Preview"
+                    />
+                  ) :
+                    /* 2. Если это DOCX (специальный контейнер для библиотеки) */
+                    previewDoc?.name.toLowerCase().endsWith('.docx') ? (
+                      <div id="docx-container" style={{ width: '100%', minHeight: '500px' }}></div>
+                    ) : (
+                      /* 3. Если это обычный текст (TXT, JSON) */
+                      <pre style={{ whiteSpace: 'pre-wrap', color: '#333', margin: 0 }}>
+                        {previewContent}
+                      </pre>
+                    )}
+                </>
               )}
             </div>
 

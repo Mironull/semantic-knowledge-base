@@ -51,10 +51,11 @@ class BaseParser(ABC):
 
 
 class TextParser(BaseParser):
-    """Parser for plain text files (txt, json, xml, etc.)."""
-
     def can_parse(self, filename: str, content_type: str) -> bool:
-        """Check if file is a text-based format."""
+        # Добавляем исключения: НЕ парсить как текст, если это PDF или DOCX
+        if filename.lower().endswith(('.pdf', '.docx', '.doc')):
+            return False
+            
         return any([
             "text" in content_type.lower(),
             "json" in content_type.lower(),

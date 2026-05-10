@@ -1,10 +1,10 @@
 """
 Health check API routes.
 """
+
 from fastapi import APIRouter
 
 from app.core.config import settings
-
 
 # Create router
 router = APIRouter()
@@ -21,12 +21,12 @@ router = APIRouter()
                 "application/json": {
                     "example": {
                         "message": "Document Store API is running. Visit /docs for API documentation.",
-                        "version": "1.0.0"
+                        "version": "1.0.0",
                     }
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def root():
     """
@@ -37,7 +37,7 @@ async def root():
     return {
         "message": f"{settings.APP_NAME} is running. Visit /docs for API documentation.",
         "version": settings.VERSION,
-        "docs": "/docs"
+        "docs": "/docs",
     }
 
 
@@ -53,12 +53,12 @@ async def root():
                     "example": {
                         "status": "healthy",
                         "version": "1.0.0",
-                        "app": "Document Store API"
+                        "app": "Document Store API",
                     }
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def health_check():
     """
@@ -67,8 +67,4 @@ async def health_check():
     Use this endpoint to verify that the API is running and responding correctly.
     Returns the service status, version, and application name.
     """
-    return {
-        "status": "healthy",
-        "version": settings.VERSION,
-        "app": settings.APP_NAME
-    }
+    return {"status": "healthy", "version": settings.VERSION, "app": settings.APP_NAME}

@@ -1,6 +1,7 @@
 """
 Document Store API application package.
 """
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,19 +25,19 @@ def create_app() -> FastAPI:
         openapi_tags=[
             {
                 "name": "documents",
-                "description": "Document management operations: upload, download, search, and preview documents"
+                "description": "Document management operations: upload, download, search, and preview documents",
             },
-            {
-                "name": "health",
-                "description": "Health check and status endpoints"
-            }
-        ]
+            {"name": "health", "description": "Health check and status endpoints"},
+        ],
     )
 
     # Add CORS middleware
+    # Add CORS middleware
+    # Добавляем CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        # Разрешаем все порты для localhost
+        allow_origin_regex=r"http://localhost:\d+",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

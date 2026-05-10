@@ -1,18 +1,23 @@
 """
 Document management API routes.
 """
+
 from datetime import datetime
 from typing import List
 from uuid import uuid4
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Query
+# Главное изменение здесь: добавили Response в основной импорт
+from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Response
+
+# Оставили StreamingResponse для совместимости (если он нужен в других местах)
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
 from app.models import DocumentMetadata, DocumentMetadataWithSize, DocumentSearchResult
 from app.services import DatabaseManager, DocumentParserService
-from app.ml import EmbeddingService, EmbeddingDatabase, cross_encoder_reranker
 
+# Твои ML импорты
+from app.ml import EmbeddingService, EmbeddingDatabase, cross_encoder_reranker
 
 # Create router
 router = APIRouter()
@@ -47,12 +52,12 @@ if settings.ML_RERANKER_ENABLED:
                         "id": "123e4567-e89b-12d3-a456-426614174000",
                         "filename": "example.pdf",
                         "content_type": "application/pdf",
-                        "upload_date": "2025-04-21T12:00:00"
+                        "upload_date": "2025-04-21T12:00:00",
                     }
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def upload_document(
     file: UploadFile = File(..., description="The document file to upload")
@@ -85,16 +90,14 @@ async def upload_document(
         filename=file.filename,
         content_type=file.content_type,
         data=content,
-        upload_date=now
+        upload_date=now,
     )
 
     # Split into chunks, embed, and store if ML service is available
     if embedding_service.is_available():
         try:
             parsed_data = parser_service.parse_document(
-                data=content,
-                filename=file.filename,
-                content_type=file.content_type
+                data=content, filename=file.filename, content_type=file.content_type
             )
             text_content = parsed_data.get("content", "")
 
@@ -122,31 +125,18 @@ async def upload_document(
     responses={
         200: {
             "description": "Document file",
-            "content": {
-                "application/octet-stream": {
-                    "example": "Binary file content"
-                }
-            }
+            "content": {"application/octet-stream": {"example": "Binary file content"}},
         },
         404: {
             "description": "Document not found",
             "content": {
-                "application/json": {
-                    "example": {"detail": "Document not found"}
-                }
-            }
-        }
-    }
+                "application/json": {"example": {"detail": "Document not found"}}
+            },
+        },
+    },
 )
-async def download_document(
-    doc_id: str
-):
-    """
-    Download a document by its unique identifier.
-
-    The document will be returned with its original filename and content type,
-    allowing the browser to handle it appropriately (download or display).
-    """
+@router.get("/download/{doc_id}")
+async def download_document(doc_id: str):
     result = db_manager.get_document_data(doc_id)
 
     if not result:
@@ -154,10 +144,19 @@ async def download_document(
 
     filename, content_type, data = result
 
-    return StreamingResponse(
-        iter([data]),
+    # Импорт для корректной работы с русскими буквами в именах файлов
+    from urllib.parse import quote
+
+    encoded_filename = quote(filename)
+
+    return Response(
+        content=data,
         media_type=content_type,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={
+            # filename* позволяет браузеру правильно понять кириллицу
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )
 
 
@@ -177,20 +176,20 @@ async def download_document(
                             "filename": "report.pdf",
                             "content_type": "application/pdf",
                             "upload_date": "2025-04-21T12:00:00",
-                            "similarity_score": 0.8542
+                            "similarity_score": 0.8542,
                         }
                     ]
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def search_documents(
     name: str = Query(
         ...,
         min_length=1,
         description="Search query for semantic or filename search",
-        example="machine learning algorithms"
+        example="machine learning algorithms",
     )
 ):
     """
@@ -216,17 +215,24 @@ async def search_documents(
             query_embedding = embedding_service.generate_embedding(name)
 
             if query_embedding is not None:
-                doc_ids, chunk_indices, chunk_texts, all_embeddings = embedding_db.get_all_embeddings()
+                doc_ids, chunk_indices, chunk_texts, all_embeddings = (
+                    embedding_db.get_all_embeddings()
+                )
 
                 if len(doc_ids) > 0:
-                    similarities = embedding_service.compute_similarity(query_embedding, all_embeddings)
+                    similarities = embedding_service.compute_similarity(
+                        query_embedding, all_embeddings
+                    )
 
                     # Keep best-scoring chunk per document
                     best_per_doc: dict = {}
                     for doc_id, chunk_idx, chunk_text, score in zip(
                         doc_ids, chunk_indices, chunk_texts, similarities.tolist()
                     ):
-                        if doc_id not in best_per_doc or score > best_per_doc[doc_id]["score"]:
+                        if (
+                            doc_id not in best_per_doc
+                            or score > best_per_doc[doc_id]["score"]
+                        ):
                             best_per_doc[doc_id] = {
                                 "score": score,
                                 "chunk_text": chunk_text,
@@ -236,7 +242,8 @@ async def search_documents(
                     # Stage 1: bi-encoder — take ML_RERANK_CANDIDATES for reranker
                     candidate_count = (
                         settings.ML_RERANK_CANDIDATES
-                        if settings.ML_RERANKER_ENABLED and cross_encoder_reranker.is_available()
+                        if settings.ML_RERANKER_ENABLED
+                        and cross_encoder_reranker.is_available()
                         else settings.ML_TOP_K
                     )
                     candidates = sorted(
@@ -246,34 +253,45 @@ async def search_documents(
                     )[:candidate_count]
 
                     # Stage 2: cross-encoder rerank (if enabled)
-                    if settings.ML_RERANKER_ENABLED and cross_encoder_reranker.is_available():
+                    if (
+                        settings.ML_RERANKER_ENABLED
+                        and cross_encoder_reranker.is_available()
+                    ):
                         candidates = cross_encoder_reranker.rerank(
                             query=name,
                             candidates=candidates,
                             top_k=settings.ML_TOP_K,
                         )
                     else:
-                        candidates = candidates[:settings.ML_TOP_K]
+                        candidates = candidates[: settings.ML_TOP_K]
 
                     results = []
                     for doc_id, best in candidates:
                         metadata = db_manager.get_document_metadata(doc_id)
                         if metadata:
-                            results.append(DocumentSearchResult(
-                                id=metadata.id,
-                                filename=metadata.filename,
-                                content_type=metadata.content_type,
-                                upload_date=metadata.upload_date,
-                                similarity_score=best["score"],
-                                chunk_text=best["chunk_text"],
-                                chunk_index=best["chunk_index"],
-                            ))
+                            results.append(
+                                DocumentSearchResult(
+                                    id=metadata.id,
+                                    filename=metadata.filename,
+                                    content_type=metadata.content_type,
+                                    upload_date=metadata.upload_date,
+                                    similarity_score=best["score"],
+                                    chunk_text=best["chunk_text"],
+                                    chunk_index=best["chunk_index"],
+                                )
+                            )
 
-                    stage = "bi-encoder + cross-encoder rerank" if cross_encoder_reranker.is_available() else "bi-encoder"
+                    stage = (
+                        "bi-encoder + cross-encoder rerank"
+                        if cross_encoder_reranker.is_available()
+                        else "bi-encoder"
+                    )
                     print(f"Search ({stage}) returned {len(results)} results")
                     return results
         except Exception as e:
-            print(f"Warning: Semantic search failed, falling back to filename search: {e}")
+            print(
+                f"Warning: Semantic search failed, falling back to filename search: {e}"
+            )
 
     # Fallback to filename search (no similarity scores)
     print("Using filename search")
@@ -286,7 +304,7 @@ async def search_documents(
             filename=doc.filename,
             content_type=doc.content_type,
             upload_date=doc.upload_date,
-            similarity_score=None
+            similarity_score=None,
         )
         for doc in filename_results
     ]
@@ -308,13 +326,13 @@ async def search_documents(
                             "filename": "report.pdf",
                             "content_type": "application/pdf",
                             "upload_date": "2025-04-21T12:00:00",
-                            "size": 102400
+                            "size": 102400,
                         }
                     ]
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def list_all_documents():
     """
@@ -332,8 +350,8 @@ async def list_all_documents():
     description="Delete a document and its embedding by ID.",
     responses={
         200: {"description": "Document deleted successfully"},
-        404: {"description": "Document not found"}
-    }
+        404: {"description": "Document not found"},
+    },
 )
 async def delete_document(doc_id: str):
     """Delete a document and its associated embedding."""
@@ -344,16 +362,30 @@ async def delete_document(doc_id: str):
     return {"message": "Document deleted successfully"}
 
 
-def _reembed_document(doc_id: str, filename: str, content_type: str, data: bytes) -> dict:
+def _reembed_document(
+    doc_id: str, filename: str, content_type: str, data: bytes
+) -> dict:
     """Parse a document and (re)generate its embeddings. Returns a status dict."""
     if not embedding_service.is_available():
-        return {"doc_id": doc_id, "status": "skipped", "chunks": 0, "reason": "ML service unavailable"}
+        return {
+            "doc_id": doc_id,
+            "status": "skipped",
+            "chunks": 0,
+            "reason": "ML service unavailable",
+        }
 
-    parsed = parser_service.parse_document(data=data, filename=filename, content_type=content_type)
+    parsed = parser_service.parse_document(
+        data=data, filename=filename, content_type=content_type
+    )
     text_content = parsed.get("content", "")
 
     if not text_content or not isinstance(text_content, str):
-        return {"doc_id": doc_id, "status": "skipped", "chunks": 0, "reason": "No text content extracted"}
+        return {
+            "doc_id": doc_id,
+            "status": "skipped",
+            "chunks": 0,
+            "reason": "No text content extracted",
+        }
 
     chunks = embedding_service.split_into_chunks(
         text_content,
@@ -361,15 +393,24 @@ def _reembed_document(doc_id: str, filename: str, content_type: str, data: bytes
         chunk_overlap=settings.ML_CHUNK_OVERLAP,
     )
     if not chunks:
-        return {"doc_id": doc_id, "status": "skipped", "chunks": 0, "reason": "No chunks produced"}
+        return {
+            "doc_id": doc_id,
+            "status": "skipped",
+            "chunks": 0,
+            "reason": "No chunks produced",
+        }
 
     embeddings = embedding_service.generate_embeddings_batch(chunks)
     if embeddings is None:
-        return {"doc_id": doc_id, "status": "error", "chunks": 0, "reason": "Embedding generation failed"}
+        return {
+            "doc_id": doc_id,
+            "status": "error",
+            "chunks": 0,
+            "reason": "Embedding generation failed",
+        }
 
     embedding_db.store_chunks(doc_id, chunks, embeddings)
     return {"doc_id": doc_id, "status": "ok", "chunks": len(chunks)}
-
 
 
 @router.post(
@@ -379,7 +420,7 @@ def _reembed_document(doc_id: str, filename: str, content_type: str, data: bytes
     responses={
         200: {"description": "Bulk reembed results"},
         503: {"description": "ML service unavailable"},
-    }
+    },
 )
 async def reembed_all_documents():
     """Recreate embeddings for all stored documents."""
@@ -391,7 +432,14 @@ async def reembed_all_documents():
     for doc in documents:
         raw = db_manager.get_document_data(doc.id)
         if raw is None:
-            results.append({"doc_id": doc.id, "status": "error", "chunks": 0, "reason": "Data not found"})
+            results.append(
+                {
+                    "doc_id": doc.id,
+                    "status": "error",
+                    "chunks": 0,
+                    "reason": "Data not found",
+                }
+            )
             continue
         filename, content_type, data = raw
         results.append(_reembed_document(doc.id, filename, content_type, data))
@@ -416,8 +464,8 @@ async def reembed_all_documents():
                             "value": {
                                 "content": "This is the text content...",
                                 "type": "text",
-                                "content_type": "text/plain"
-                            }
+                                "content_type": "text/plain",
+                            },
                         },
                         "pdf_file": {
                             "summary": "PDF file preview",
@@ -425,8 +473,8 @@ async def reembed_all_documents():
                                 "content": "=== Страница 1 ===\nExtracted text...",
                                 "type": "text",
                                 "content_type": "application/pdf",
-                                "pages": 5
-                            }
+                                "pages": 5,
+                            },
                         },
                         "unsupported": {
                             "summary": "Unsupported format",
@@ -434,47 +482,35 @@ async def reembed_all_documents():
                                 "content": "Предпросмотр недоступен для формата image/png",
                                 "type": "unsupported",
                                 "content_type": "image/png",
-                                "size": 204800
-                            }
-                        }
+                                "size": 204800,
+                            },
+                        },
                     }
                 }
-            }
+            },
         },
         404: {
             "description": "Document not found",
             "content": {
-                "application/json": {
-                    "example": {"detail": "Document not found"}
-                }
-            }
-        }
-    }
+                "application/json": {"example": {"detail": "Document not found"}}
+            },
+        },
+    },
 )
 async def preview_document(doc_id: str):
-    """
-    Preview document content by extracting text.
-
-    Extracts and returns text content from supported document formats:
-    - **Text files**: Returns raw text content
-    - **PDF files**: Extracts text from all pages with page markers
-    - **DOCX files**: Extracts text from paragraphs and tables
-    - **JSON/XML**: Returns formatted text content
-
-    For unsupported formats (images, etc.), returns an informational message.
-    """
     result = db_manager.get_document_data(doc_id)
-
     if not result:
         raise HTTPException(status_code=404, detail="Document not found")
 
     filename, content_type, data = result
+    filename_lower = filename.lower()
 
-    # Parse document using appropriate parser
+    # 1. Бинарные форматы (DOCX, PDF) - отдаем файл целиком
+    if filename_lower.endswith((".docx", ".pdf")):
+        return Response(content=data, media_type=content_type)
+
+    # 2. Текстовые форматы (TXT, HTML, JSON) - используем парсер
     preview_data = parser_service.parse_document(
-        data=data,
-        filename=filename,
-        content_type=content_type
+        data=data, filename=filename, content_type=content_type
     )
-
     return preview_data
